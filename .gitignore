@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Environment
+.env
+
+# Node
+node_modules/
+dist/
+
+# IDE
+.idea/
+.vscode/
+
+# LSTM
+*.keras
+*.h5
+*.pkl
+
+# Logs
+*.log
+
+# OS
+Thumbs.db
+.DS_Store
