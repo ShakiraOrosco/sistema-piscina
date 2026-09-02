@@ -1,20 +1,10 @@
 from fastapi import FastAPI
 
+from .routers.monitoring import router
+
 app = FastAPI(
     title="Sistema de Monitoreo y Dosificación de Piscina",
-    version="1.0.0"
+    version="1.0.0",
 )
 
-
-@app.get("/")
-def root():
-    return {
-        "mensaje": "Sistema de piscina funcionando"
-    }
-
-
-@app.get("/health")
-def health():
-    return {
-        "status": "ok"
-    }
+app.include_router(router)
