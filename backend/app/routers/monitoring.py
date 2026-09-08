@@ -26,7 +26,7 @@ async def health():
     return {"status": "ok"}
 
 
-@router.post("/lecturas")
+@router.post("/lecturas", status_code=201)
 async def crear_lectura(payload: Dict[str, Any]):
     if payload is None:
         raise HTTPException(status_code=400, detail="Se requiere un cuerpo JSON")
@@ -67,18 +67,11 @@ async def crear_lectura(payload: Dict[str, Any]):
         conn.commit()
         cur.close()
 
-        resumen = recalcular_resumen(conn, id_jornada)
-        prediccion, error_lstm = correr_prediccion(conn, id_jornada, resumen or {})
-
         respuesta = {
             "mensaje": "Lectura guardada correctamente",
             "id": id_medicion,
             "id_jornada": id_jornada,
-            "resumen_actualizado": resumen,
-            "prediccion": prediccion,
         }
-        if error_lstm:
-            respuesta["advertencia_lstm"] = error_lstm
         return respuesta
     except Exception as exc:
         conn.rollback()
