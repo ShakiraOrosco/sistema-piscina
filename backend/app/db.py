@@ -12,6 +12,7 @@ def get_connection():
             dbname=settings.DB_NAME,
             user=settings.DB_USER,
             password=settings.DB_PASSWORD,
+            options="-c search_path=piscina_lstm3,public",
         )
     except Exception as exc:  # pragma: no cover - depende del entorno de ejecución
         print(f"No se pudo conectar a Supabase: {exc}")
