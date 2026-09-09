@@ -12,12 +12,27 @@ function App() {
   const [loadingUsers, setLoadingUsers] = useState(false)
   const [sensorData, setSensorData] = useState(null)
   const [loadingSensors, setLoadingSensors] = useState(false)
+  const [twoFactorChallenge, setTwoFactorChallenge] = useState(null)
+  const [profile, setProfile] = useState(null)
 
   const authConfig = () => ({ headers: { Authorization: `Bearer ${session.access_token}` } })
+
+  const showMessage = (text) => {
+    setMessage(text)
+    setError('')
+    window.setTimeout(() => setMessage(''), 4000)
+  }
 
   const showError = (requestError) => {
     setError(requestError.response?.data?.detail || 'No se pudo completar la operación')
     setMessage('')
+    window.setTimeout(() => setError(''), 5000)
+  }
+
+  const showErrorMessage = (text) => {
+    setError(text)
+    setMessage('')
+    window.setTimeout(() => setError(''), 5000)
   }
 
   const loadSensorData = async () => {
@@ -31,7 +46,7 @@ function App() {
       setError('')
     } catch (requestError) {
       setSensorData(null)
-      setError(requestError.response?.data?.detail || 'No se pudieron cargar las lecturas de los sensores')
+      showErrorMessage(requestError.response?.data?.detail || 'No se pudieron cargar las lecturas de los sensores')
     } finally {
       setLoadingSensors(false)
     }
@@ -55,6 +70,11 @@ function App() {
     const form = new FormData(event.currentTarget)
     try {
       const { data } = await api.post('/auth/login', Object.fromEntries(form))
+      if (data.requiere_2fa) {
+        setTwoFactorChallenge(data)
+        setView('verify-2fa')
+        return
+      }
       setSession(data)
       setView(data.must_change_password ? 'change-password' : 'dashboard')
       if (data.usuario.sigla_rol === 'ADM') await loadUsers(data.access_token)
@@ -64,6 +84,23 @@ function App() {
     }
   }
 
+  const submitTwoFactor = async (event) => {
+    event.preventDefault()
+    try {
+      const form = new FormData(event.currentTarget)
+      const { data } = await api.post('/auth/verify-2fa', {
+        desafio: twoFactorChallenge.desafio,
+        codigo: form.get('codigo'),
+      })
+      const authenticatedSession = { ...data, usuario: twoFactorChallenge.usuario }
+      setSession(authenticatedSession)
+      setTwoFactorChallenge(null)
+      setView(data.must_change_password ? 'change-password' : 'dashboard')
+      if (authenticatedSession.usuario.sigla_rol === 'ADM') await loadUsers(data.access_token)
+      if (!data.must_change_password) await loadSensorData()
+    } catch (requestError) { showError(requestError) }
+  }
+
   const submitChangePassword = async (event) => {
     event.preventDefault()
     try {
@@ -71,7 +108,23 @@ function App() {
       const { data } = await api.post('/auth/change-password', Object.fromEntries(form), authConfig())
       setSession({ ...session, must_change_password: false })
       setView('dashboard')
-      setMessage(data.mensaje)
+      showMessage(data.mensaje)
+    } catch (requestError) { showError(requestError) }
+  }
+
+  const openProfile = async () => {
+    try {
+      const { data } = await api.get('/auth/profile', authConfig())
+      setProfile(data)
+      setView('profile')
+    } catch (requestError) { showError(requestError) }
+  }
+
+  const toggleTwoFactor = async (enabled) => {
+    try {
+      const { data } = await api.put('/auth/profile/2fa', { activo: enabled }, authConfig())
+      setProfile({ ...profile, doble_factor_activo: data.doble_factor_activo })
+      showMessage(data.mensaje)
     } catch (requestError) { showError(requestError) }
   }
 
@@ -85,7 +138,7 @@ function App() {
         : api.post('/auth/users', payload, authConfig())
       const { data } = await request
       setUserForm(null)
-      setMessage(data.mensaje)
+      showMessage(data.mensaje)
       await loadUsers()
     } catch (requestError) { showError(requestError) }
   }
@@ -94,7 +147,7 @@ function App() {
     if (!window.confirm(`¿Desactivar a ${user.nombre} ${user.primer_apellido}?`)) return
     try {
       const { data } = await api.delete(`/auth/users/${user.id_usuario}`, authConfig())
-      setMessage(data.mensaje)
+      showMessage(data.mensaje)
       await loadUsers()
     } catch (requestError) { showError(requestError) }
   }
@@ -102,9 +155,12 @@ function App() {
   const logout = () => {
     setSession(null)
     setView('dashboard')
+    setProfile(null)
+    setTwoFactorChallenge(null)
     setMessage('')
   }
 
+  if (!session && view === 'verify-2fa') return <TwoFactor error={error} challenge={twoFactorChallenge} onSubmit={submitTwoFactor} onBack={() => { setView('dashboard'); setTwoFactorChallenge(null) }} />
   if (!session) return <Login error={error} onSubmit={submitLogin} />
   if (view === 'change-password') return <ChangePassword error={error} onSubmit={submitChangePassword} />
 
@@ -114,6 +170,7 @@ function App() {
       <div className="brand"><span className="brand-mark">PA</span><div><strong>Playa Azul</strong><small>Control center</small></div></div>
       <div className="side-label">MENÚ PRINCIPAL</div>
       <button className={`nav-item ${view === 'dashboard' ? 'selected' : ''}`} onClick={() => setView('dashboard')}><span>▦</span> Dashboard</button>
+      <button className={`nav-item ${view === 'profile' ? 'selected' : ''}`} onClick={openProfile}><span>◎</span> Perfil</button>
       {session.usuario.sigla_rol === 'ADM' && <button className={`nav-item ${view === 'users' ? 'selected' : ''}`} onClick={() => setView('users')}><span>♙</span> Usuarios</button>}
       <div className="sidebar-footer"><div className="avatar">{session.usuario.nombre.slice(0, 1).toUpperCase()}</div><div><strong>{session.usuario.nombre}</strong><small>{session.usuario.sigla_rol === 'ADM' ? 'Administrador' : 'Operador'}</small></div><button className="logout" onClick={logout} title="Cerrar sesión">↪</button></div>
     </aside>
@@ -122,6 +179,7 @@ function App() {
       {error && <div className="notice error">{error}</div>}
       {message && <div className="notice success">{message}</div>}
       {view === 'dashboard' && <Dashboard activeUsers={activeUsers} totalUsers={users.length} sensorData={sensorData} loadingSensors={loadingSensors} onRefresh={loadSensorData} onUsers={() => setView('users')} />}
+      {view === 'profile' && <Profile profile={profile} onToggle={toggleTwoFactor} />}
       {view === 'users' && <UsersPage users={users} loading={loadingUsers} onNew={() => setUserForm({})} onEdit={setUserForm} onDisable={disableUser} />}
     </section>
     {userForm && <UserModal user={userForm} onClose={() => setUserForm(null)} onSubmit={submitUser} />}
@@ -132,8 +190,18 @@ function Login({ error, onSubmit }) {
   return <main className="login-shell"><section className="login-art"><span className="eyebrow">PLAYA AZUL / OPERACIONES</span><h1>El agua, bajo control.</h1><p>Monitoreo inteligente y operación clara para una piscina siempre lista.</p><div className="pool-lines" /></section><section className="login-card"><div className="brand login-brand"><span className="brand-mark">PA</span><div><strong>Playa Azul</strong><small>Control center</small></div></div>{error && <div className="notice error">{error}</div>}<form className="form" onSubmit={onSubmit}><div><span className="eyebrow">BIENVENIDO DE VUELTA</span><h2>Inicia sesión</h2><p className="muted">Accede a tu centro de operaciones.</p></div><label>Correo<input name="correo" type="email" autoComplete="email" required /></label><label>Contraseña<input name="password" type="password" autoComplete="current-password" required /></label><button className="primary" type="submit">Entrar al panel <span>→</span></button></form></section></main>
 }
 
+function TwoFactor({ error, challenge, onSubmit, onBack }) {
+  return <main className="login-shell single"><section className="login-card"><div className="brand login-brand"><span className="brand-mark">PA</span><div><strong>Playa Azul</strong><small>Control center</small></div></div>{error && <div className="notice error">{error}</div>}<form className="form" onSubmit={onSubmit}><div><span className="eyebrow">VERIFICACIÓN DE SEGURIDAD</span><h2>Confirma tu acceso</h2><p className="muted">Enviamos un código de 6 dígitos a {challenge?.correo_mascarado || 'tu correo'}.</p></div><label>Código de verificación<input name="codigo" inputMode="numeric" pattern="[0-9]{6}" maxLength="6" autoComplete="one-time-code" required /></label><button className="primary" type="submit">Verificar código <span>→</span></button><button className="secondary" type="button" onClick={onBack}>Volver al inicio</button></form></section></main>
+}
+
 function ChangePassword({ error, onSubmit }) {
-  return <main className="login-shell single"><section className="login-card"><div className="brand login-brand"><span className="brand-mark">PA</span><div><strong>Playa Azul</strong><small>Control center</small></div></div>{error && <div className="notice error">{error}</div>}<form className="form" onSubmit={onSubmit}><div><span className="eyebrow">PRIMER ACCESO</span><h2>Define tu contraseña</h2><p className="muted">Cambia la contraseña temporal antes de continuar.</p></div><label>Contraseña temporal<input name="password_actual" type="password" required /></label><label>Nueva contraseña<input name="password_nueva" type="password" minLength="8" required /></label><button className="primary" type="submit">Guardar contraseña <span>→</span></button></form></section></main>
+  return <main className="login-shell single"><section className="login-card"><div className="brand login-brand"><span className="brand-mark">PA</span><div><strong>Playa Azul</strong><small>Control center</small></div></div>{error && <div className="notice error">{error}</div>}<form className="form" onSubmit={onSubmit}><div><span className="eyebrow">PRIMER ACCESO</span><h2>Define tu contraseña</h2><p className="muted">Cambia la contraseña temporal antes de continuar.</p></div><label>Contraseña temporal<input name="password_actual" type="password" autoComplete="current-password" required /></label><label>Nueva contraseña<input name="password_nueva" type="password" minLength="8" autoComplete="new-password" required /></label><label>Confirmar nueva contraseña<input name="confirmar_password_nueva" type="password" minLength="8" autoComplete="new-password" required /></label><button className="primary" type="submit">Guardar contraseña <span>→</span></button></form></section></main>
+}
+
+function Profile({ profile, onToggle }) {
+  if (!profile) return <div className="panel-card profile-card"><p className="muted">Cargando perfil...</p></div>
+  const fullName = [profile.nombre, profile.primer_apellido, profile.segundo_apellido].filter(Boolean).join(' ')
+  return <div className="profile-content"><div className="profile-heading"><div><span className="eyebrow">CUENTA PERSONAL</span><h2>Mi perfil</h2><p className="muted">Administra tus datos de acceso y seguridad.</p></div><div className="profile-avatar">{profile.nombre.slice(0, 1).toUpperCase()}</div></div><section className="profile-grid"><div className="panel-card profile-card"><small>INFORMACIÓN DEL USUARIO</small><div className="profile-row"><span>Nombre completo</span><strong>{fullName}</strong></div><div className="profile-row"><span>Correo electrónico</span><strong>{profile.correo}</strong></div><div className="profile-row"><span>Rol</span><strong>{profile.sigla_rol === 'ADM' ? 'Administrador' : 'Operador'}</strong></div></div><div className="panel-card security-card"><small>SEGURIDAD</small><h3>Doble factor de autenticación</h3><p className="muted">Al activarlo, recibirás un código de 6 dígitos en tu correo cada vez que inicies sesión.</p><div className="toggle-row"><div><strong>{profile.doble_factor_activo ? 'Doble factor activo' : 'Doble factor desactivado'}</strong><small>{profile.doble_factor_activo ? 'Tu cuenta está protegida con verificación por correo.' : 'Actívalo para añadir una capa de seguridad.'}</small></div><button className={`toggle ${profile.doble_factor_activo ? 'on' : ''}`} type="button" onClick={() => onToggle(!profile.doble_factor_activo)} aria-label="Activar o desactivar doble factor"><span /></button></div></div></section></div>
 }
 
 function Dashboard({ activeUsers, totalUsers, sensorData, loadingSensors, onRefresh, onUsers }) {

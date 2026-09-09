@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 import jwt
@@ -11,7 +12,10 @@ from ..config import settings
 from ..db import get_connection, get_dict_cursor
 from ..services.auth_service import (
     crear_token,
+    crear_token_2fa,
+    enviar_codigo_2fa,
     enviar_password_temporal,
+    generar_codigo_2fa,
     generar_password_temporal,
     hash_password,
     verificar_password,
@@ -37,6 +41,16 @@ class Login(BaseModel):
 class CambiarPassword(BaseModel):
     password_actual: str = Field(min_length=1, max_length=255)
     password_nueva: str = Field(min_length=8, max_length=255)
+    confirmar_password_nueva: str = Field(min_length=8, max_length=255)
+
+
+class VerificarCodigo2FA(BaseModel):
+    desafio: str
+    codigo: str = Field(pattern=r"^\d{6}$")
+
+
+class Configurar2FA(BaseModel):
+    activo: bool
 
 
 class EditarUsuario(BaseModel):
@@ -111,19 +125,121 @@ def iniciar_sesion(payload: Login):
     try:
         cur = get_dict_cursor(conn)
         cur.execute(
-            "SELECT id_usuario, nombre, primer_apellido, segundo_apellido, correo, password, sigla_rol, debe_cambiar_password FROM usuario WHERE correo = %s AND activo = TRUE",
+            "SELECT id_usuario, nombre, primer_apellido, segundo_apellido, correo, password, sigla_rol, debe_cambiar_password, doble_factor_activo FROM usuario WHERE correo = %s AND activo = TRUE",
             (payload.correo,),
         )
         usuario = cur.fetchone()
         if not usuario or not verificar_password(payload.password, usuario["password"]):
             raise HTTPException(status_code=401, detail="Correo o contraseña inválidos")
         debe_cambiar = usuario["debe_cambiar_password"]
+        if usuario["doble_factor_activo"]:
+            codigo = generar_codigo_2fa()
+            expira = datetime.now(timezone.utc) + timedelta(minutes=10)
+            cur.execute(
+                "UPDATE usuario SET codigo_2fa_hash = %s, codigo_2fa_expira = %s WHERE id_usuario = %s",
+                (hash_password(codigo), expira, usuario["id_usuario"]),
+            )
+            enviar_codigo_2fa(usuario["correo"], codigo)
+            conn.commit()
+            return {
+                "requiere_2fa": True,
+                "desafio": crear_token_2fa(usuario["id_usuario"]),
+                "correo_mascarado": _mascarar_correo(usuario["correo"]),
+                "usuario": {"id_usuario": usuario["id_usuario"], "nombre": usuario["nombre"], "primer_apellido": usuario["primer_apellido"], "segundo_apellido": usuario["segundo_apellido"], "correo": usuario["correo"], "sigla_rol": usuario["sigla_rol"]},
+            }
         return {
             "access_token": crear_token(usuario["id_usuario"], usuario["correo"], usuario["sigla_rol"], debe_cambiar),
             "token_type": "bearer",
             "must_change_password": debe_cambiar,
             "usuario": {"id_usuario": usuario["id_usuario"], "nombre": usuario["nombre"], "primer_apellido": usuario["primer_apellido"], "segundo_apellido": usuario["segundo_apellido"], "correo": usuario["correo"], "sigla_rol": usuario["sigla_rol"]},
         }
+    finally:
+        conn.close()
+
+
+def _mascarar_correo(correo: str) -> str:
+    usuario, dominio = correo.split("@", 1)
+    visible = usuario[:2] if len(usuario) > 2 else usuario[:1]
+    return f"{visible}{'*' * max(2, len(usuario) - len(visible))}@{dominio}"
+
+
+@router.post("/verify-2fa")
+def verificar_2fa(payload: VerificarCodigo2FA):
+    try:
+        claims = jwt.decode(payload.desafio, settings.JWT_SECRET, algorithms=["HS256"])
+        if claims.get("purpose") != "2fa":
+            raise HTTPException(status_code=401, detail="Desafío 2FA inválido")
+    except jwt.PyJWTError as exc:
+        raise HTTPException(status_code=401, detail="El código de acceso expiró") from exc
+
+    conn = get_connection()
+    if conn is None:
+        raise HTTPException(status_code=500, detail="No se pudo conectar a Supabase")
+    try:
+        cur = get_dict_cursor(conn)
+        cur.execute(
+            "SELECT id_usuario, correo, sigla_rol, debe_cambiar_password, codigo_2fa_hash, codigo_2fa_expira FROM usuario WHERE id_usuario = %s AND activo = TRUE AND doble_factor_activo = TRUE",
+            (int(claims["sub"]),),
+        )
+        usuario = cur.fetchone()
+        ahora = datetime.now(timezone.utc)
+        if not usuario or not usuario["codigo_2fa_hash"] or not usuario["codigo_2fa_expira"]:
+            raise HTTPException(status_code=401, detail="No hay un código 2FA pendiente")
+        expira = usuario["codigo_2fa_expira"].replace(tzinfo=timezone.utc) if usuario["codigo_2fa_expira"].tzinfo is None else usuario["codigo_2fa_expira"]
+        if expira < ahora or not verificar_password(payload.codigo, usuario["codigo_2fa_hash"]):
+            raise HTTPException(status_code=401, detail="Código 2FA incorrecto o expirado")
+        cur.execute("UPDATE usuario SET codigo_2fa_hash = NULL, codigo_2fa_expira = NULL WHERE id_usuario = %s", (usuario["id_usuario"],))
+        conn.commit()
+        return {
+            "access_token": crear_token(usuario["id_usuario"], usuario["correo"], usuario["sigla_rol"], usuario["debe_cambiar_password"]),
+            "token_type": "bearer",
+            "must_change_password": usuario["debe_cambiar_password"],
+        }
+    except HTTPException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@router.get("/profile")
+def obtener_perfil(claims: Annotated[dict, Depends(usuario_actual)]):
+    conn = get_connection()
+    if conn is None:
+        raise HTTPException(status_code=500, detail="No se pudo conectar a Supabase")
+    try:
+        cur = get_dict_cursor(conn)
+        cur.execute(
+            "SELECT id_usuario, nombre, primer_apellido, segundo_apellido, correo, sigla_rol, doble_factor_activo FROM usuario WHERE id_usuario = %s AND activo = TRUE",
+            (int(claims["sub"]),),
+        )
+        perfil = cur.fetchone()
+        if not perfil:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        return perfil
+    finally:
+        conn.close()
+
+
+@router.put("/profile/2fa")
+def configurar_2fa(payload: Configurar2FA, claims: Annotated[dict, Depends(usuario_actual)]):
+    conn = get_connection()
+    if conn is None:
+        raise HTTPException(status_code=500, detail="No se pudo conectar a Supabase")
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE usuario SET doble_factor_activo = %s, codigo_2fa_hash = NULL, codigo_2fa_expira = NULL WHERE id_usuario = %s AND activo = TRUE RETURNING doble_factor_activo",
+            (payload.activo, int(claims["sub"])),
+        )
+        resultado = cur.fetchone()
+        if not resultado:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        conn.commit()
+        return {"doble_factor_activo": resultado[0], "mensaje": "Doble factor actualizado correctamente"}
+    except HTTPException:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -211,6 +327,8 @@ def eliminar_usuario(id_usuario: int, claims: Annotated[dict, Depends(administra
 
 @router.post("/change-password")
 def cambiar_password(payload: CambiarPassword, claims: Annotated[dict, Depends(usuario_actual)]):
+    if payload.password_nueva != payload.confirmar_password_nueva:
+        raise HTTPException(status_code=400, detail="La confirmación no coincide con la nueva contraseña")
     if payload.password_actual == payload.password_nueva:
         raise HTTPException(status_code=400, detail="La nueva contraseña debe ser diferente")
     conn = get_connection()

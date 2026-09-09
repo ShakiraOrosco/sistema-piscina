@@ -5,6 +5,11 @@ ALTER TABLE piscina_lstm3.usuario
 ALTER TABLE piscina_lstm3.usuario
     ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE;
 
+ALTER TABLE piscina_lstm3.usuario
+    ADD COLUMN IF NOT EXISTS doble_factor_activo BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS codigo_2fa_hash TEXT,
+    ADD COLUMN IF NOT EXISTS codigo_2fa_expira TIMESTAMPTZ;
+
 -- Separar el nombre conservando temporalmente el valor original para validarlo.
 DO $$
 BEGIN
@@ -27,6 +32,18 @@ ALTER TABLE piscina_lstm3.usuario
     ADD COLUMN IF NOT EXISTS nombre VARCHAR(60),
     ADD COLUMN IF NOT EXISTS primer_apellido VARCHAR(60),
     ADD COLUMN IF NOT EXISTS segundo_apellido VARCHAR(60);
+
+-- La columna antigua solo se conserva como respaldo histórico.
+ALTER TABLE piscina_lstm3.usuario
+    ALTER COLUMN nombre_completo DROP NOT NULL;
+
+-- Permitir reutilizar el correo de un usuario desactivado.
+ALTER TABLE piscina_lstm3.usuario
+    DROP CONSTRAINT IF EXISTS usuario_correo_key;
+
+CREATE UNIQUE INDEX IF NOT EXISTS usuario_correo_activo_key
+    ON piscina_lstm3.usuario (correo)
+    WHERE activo = TRUE;
 
 WITH partes AS (
     SELECT id_usuario, regexp_split_to_array(trim(nombre_completo), '\s+') AS palabras

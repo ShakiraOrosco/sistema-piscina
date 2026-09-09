@@ -36,6 +36,42 @@ def crear_token(id_usuario: int, correo: str, sigla_rol: str, debe_cambiar: bool
     return jwt.encode(payload, settings.JWT_SECRET, algorithm="HS256")
 
 
+def crear_token_2fa(id_usuario: int) -> str:
+    ahora = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(id_usuario),
+        "purpose": "2fa",
+        "iat": ahora,
+        "exp": ahora + timedelta(minutes=10),
+    }
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm="HS256")
+
+
+def generar_codigo_2fa() -> str:
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def enviar_codigo_2fa(destinatario: str, codigo: str) -> None:
+    if not settings.SMTP_HOST or not settings.SMTP_FROM:
+        raise RuntimeError("El correo no está configurado. Define SMTP_HOST y SMTP_FROM")
+
+    mensaje = EmailMessage()
+    mensaje["Subject"] = "Código de acceso - Piscina Playa Azul"
+    mensaje["From"] = settings.SMTP_FROM
+    mensaje["To"] = destinatario
+    mensaje.set_content(
+        "Tu código de verificación para acceder al sistema es: "
+        f"{codigo}\n\nEste código vence en 10 minutos."
+    )
+
+    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as servidor:
+        if settings.SMTP_USE_TLS:
+            servidor.starttls()
+        if settings.SMTP_USER:
+            servidor.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+        servidor.send_message(mensaje)
+
+
 def enviar_password_temporal(destinatario: str, nombre: str, password: str) -> None:
     if not settings.SMTP_HOST or not settings.SMTP_FROM:
         raise RuntimeError("El correo no está configurado. Define SMTP_HOST y SMTP_FROM")
