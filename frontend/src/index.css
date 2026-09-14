@@ -1,3 +1,19 @@
-:root { font-family: 'Trebuchet MS', 'Segoe UI', sans-serif; color: #12354a; background: #eef7fb; font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
-body { margin: 0; min-width: 320px; }
-#root { min-height: 100svh; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+:root {
+  font-family: 'Inter', sans-serif;
+}
+
+.tailadmin-layout {
+  background-color: #F1F5F9;
+  color: #1C2434;
+}
+
+/* Dark mode overrides for base layout */
+.dark .tailadmin-layout {
+  background-color: #1a222c;
+  color: #aeb7c0;
+}

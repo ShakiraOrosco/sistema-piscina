@@ -255,8 +255,8 @@ def listar_usuarios(claims: Annotated[dict, Depends(administrador_actual)]):
             """
             SELECT id_usuario, nombre, primer_apellido, segundo_apellido, correo, sigla_rol, activo, debe_cambiar_password
             FROM usuario
-            WHERE id_usuario <> %s
-            ORDER BY activo DESC, nombre ASC
+            WHERE id_usuario <> %s AND activo = TRUE
+            ORDER BY nombre ASC
             """,
             (int(claims["sub"]),),
         )
