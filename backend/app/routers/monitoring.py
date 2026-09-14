@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
@@ -28,6 +28,7 @@ async def health():
 
 @router.post("/lecturas", status_code=201)
 async def crear_lectura(payload: Dict[str, Any]):
+    """Recibe una lectura del sensor IoT y la guarda en la tabla `medicion`."""
     if payload is None:
         raise HTTPException(status_code=400, detail="Se requiere un cuerpo JSON")
 
@@ -40,10 +41,9 @@ async def crear_lectura(payload: Dict[str, Any]):
         raise HTTPException(status_code=400, detail=f"Faltan campos: {faltantes}")
 
     try:
-        ph = float(payload["ph"])
-        turbidez = float(payload["turbidez"])
+        ph          = float(payload["ph"])
+        turbidez    = float(payload["turbidez"])
         temperatura = float(payload["temperatura"])
-        personas = int(payload.get("personas", 0) or 0)
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=f"Valor inválido: {exc}") from exc
 
@@ -57,22 +57,21 @@ async def crear_lectura(payload: Dict[str, Any]):
         fecha_hora = datetime.now()
         cur.execute(
             """
-            INSERT INTO mediciones (id_jornada, fecha_hora, ph, turbidez, temperatura, personas)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO medicion (id_jornada, fecha_hora, ph, turbidez, temperatura)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING id_medicion
             """,
-            (id_jornada, fecha_hora, ph, turbidez, temperatura, personas),
+            (id_jornada, fecha_hora, ph, turbidez, temperatura),
         )
         id_medicion = cur.fetchone()[0]
         conn.commit()
         cur.close()
 
-        respuesta = {
+        return {
             "mensaje": "Lectura guardada correctamente",
             "id": id_medicion,
             "id_jornada": id_jornada,
         }
-        return respuesta
     except Exception as exc:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -90,8 +89,8 @@ async def obtener_lecturas():
         cur = get_dict_cursor(conn)
         cur.execute(
             """
-            SELECT id_medicion, id_jornada, fecha_hora, ph, turbidez, temperatura, personas
-            FROM mediciones
+            SELECT id_medicion, id_jornada, fecha_hora, ph, turbidez, temperatura
+            FROM medicion
             ORDER BY fecha_hora DESC
             LIMIT 50
             """
@@ -110,8 +109,10 @@ async def estado_actual():
 
     try:
         cur = conn.cursor()
+        fecha_hoy = date.today()
         cur.execute(
-            "SELECT id_jornada FROM jornadas WHERE fecha = CURRENT_DATE ORDER BY id_jornada DESC LIMIT 1"
+            "SELECT id_jornada FROM jornada WHERE fecha = %s ORDER BY id_jornada DESC LIMIT 1",
+            (fecha_hoy,)
         )
         row = cur.fetchone()
         if not row:
@@ -119,10 +120,11 @@ async def estado_actual():
 
         id_jornada = row[0]
         cur = get_dict_cursor(conn)
+
         cur.execute(
             """
-            SELECT fecha_hora, ph, turbidez, temperatura, personas
-            FROM mediciones
+            SELECT fecha_hora, ph, turbidez, temperatura
+            FROM medicion
             WHERE id_jornada = %s
             ORDER BY fecha_hora DESC LIMIT 1
             """,
@@ -130,13 +132,20 @@ async def estado_actual():
         )
         med = cur.fetchone()
 
+        # Total personas desde aforo_manual
+        cur.execute(
+            "SELECT COALESCE(SUM(total_personas),0) AS personas FROM aforo_manual WHERE id_jornada = %s",
+            (id_jornada,),
+        )
+        personas_row = cur.fetchone()
+
         cur.execute("SELECT * FROM resumen_diario WHERE id_jornada = %s", (id_jornada,))
         resumen_row = cur.fetchone()
 
         cur.execute(
             """
             SELECT aluminio_pred, cobre_pred, cloro_pred, fecha_prediccion
-            FROM predicciones
+            FROM prediccion
             WHERE id_jornada = %s
             ORDER BY fecha_prediccion DESC LIMIT 1
             """,
@@ -146,8 +155,8 @@ async def estado_actual():
 
         cur.execute(
             """
-            SELECT fecha_hora, ph, turbidez, temperatura, personas
-            FROM mediciones
+            SELECT fecha_hora, ph, turbidez, temperatura
+            FROM medicion
             WHERE id_jornada = %s
             ORDER BY fecha_hora ASC
             """,
@@ -159,6 +168,7 @@ async def estado_actual():
             "id_jornada": id_jornada,
             "fecha": date.today().isoformat(),
             "ultima_medicion": serializar_dict(med),
+            "personas_hoy": int(personas_row["personas"]) if personas_row else 0,
             "resumen": serializar_dict(resumen_row),
             "prediccion": serializar_dict(pred),
             "historial": historial,
@@ -177,7 +187,7 @@ async def predecir_ahora():
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id_jornada FROM jornadas WHERE fecha = CURRENT_DATE ORDER BY id_jornada DESC LIMIT 1"
+            "SELECT id_jornada FROM jornada WHERE fecha = CURRENT_DATE ORDER BY id_jornada DESC LIMIT 1"
         )
         row = cur.fetchone()
         if not row:
@@ -208,9 +218,9 @@ async def alertas():
         cur = get_dict_cursor(conn)
         cur.execute(
             """
-            SELECT m.ph, m.turbidez, m.temperatura, m.personas, m.fecha_hora
-            FROM mediciones m
-            JOIN jornadas j ON j.id_jornada = m.id_jornada
+            SELECT m.ph, m.turbidez, m.temperatura, m.fecha_hora
+            FROM medicion m
+            JOIN jornada j ON j.id_jornada = m.id_jornada
             WHERE j.fecha = CURRENT_DATE
             ORDER BY m.fecha_hora DESC LIMIT 1
             """
@@ -219,17 +229,17 @@ async def alertas():
 
         alertas_list = []
         if row:
-            ph = float(row["ph"] or 0)
+            ph   = float(row["ph"]   or 0)
             turb = float(row["turbidez"] or 0)
             temp = float(row["temperatura"] or 0)
 
             if ph < 7.0:
-                alertas_list.append({"tipo": "danger", "msg": f"pH bajo: {ph:.2f} — riesgo para bañistas"})
+                alertas_list.append({"tipo": "danger",  "msg": f"pH bajo: {ph:.2f} — riesgo para bañistas"})
             elif ph > 7.6:
                 alertas_list.append({"tipo": "warning", "msg": f"pH elevado: {ph:.2f} — monitorear"})
 
             if turb > 10:
-                alertas_list.append({"tipo": "danger", "msg": f"Turbidez crítica: {turb:.1f} NTU"})
+                alertas_list.append({"tipo": "danger",  "msg": f"Turbidez crítica: {turb:.1f} NTU"})
             elif turb > 5:
                 alertas_list.append({"tipo": "warning", "msg": f"Turbidez alta: {turb:.1f} NTU"})
 

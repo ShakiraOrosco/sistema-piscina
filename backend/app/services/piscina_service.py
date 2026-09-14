@@ -4,7 +4,7 @@ import importlib
 from datetime import date, datetime
 from typing import Any, Dict, Optional, Tuple
 
-from backend.app.db import get_dict_cursor
+from ..db import get_dict_cursor
 
 
 def serializable(obj):
@@ -24,16 +24,19 @@ def serializar_dict(d):
 
 
 def obtener_o_crear_jornada_hoy(conn):
+    """Devuelve el id_jornada del día actual local, creándola si no existe."""
+    fecha_hoy = date.today()
     cur = conn.cursor()
     cur.execute(
-        "SELECT id_jornada FROM jornadas WHERE fecha = CURRENT_DATE ORDER BY id_jornada DESC LIMIT 1"
+        "SELECT id_jornada FROM jornada WHERE fecha = %s ORDER BY id_jornada DESC LIMIT 1",
+        (fecha_hoy,)
     )
     row = cur.fetchone()
     if row:
         cur.close()
         return row[0]
 
-    cur.execute("INSERT INTO jornadas (fecha) VALUES (CURRENT_DATE) RETURNING id_jornada")
+    cur.execute("INSERT INTO jornada (fecha) VALUES (%s) RETURNING id_jornada", (fecha_hoy,))
     id_jornada = cur.fetchone()[0]
     conn.commit()
     cur.close()
@@ -41,11 +44,12 @@ def obtener_o_crear_jornada_hoy(conn):
 
 
 def recalcular_resumen(conn, id_jornada: int):
+    """Recalcula y guarda el resumen diario a partir de las mediciones de la jornada."""
     cur = get_dict_cursor(conn)
     cur.execute(
         """
-        SELECT ph, turbidez, temperatura, personas
-        FROM mediciones
+        SELECT ph, turbidez, temperatura
+        FROM medicion
         WHERE id_jornada = %s AND ph IS NOT NULL
         ORDER BY fecha_hora ASC
         """,
@@ -57,43 +61,44 @@ def recalcular_resumen(conn, id_jornada: int):
     if not rows:
         return None
 
-    phs = [float(r["ph"]) for r in rows]
-    turbs = [float(r["turbidez"]) for r in rows]
+    phs   = [float(r["ph"])          for r in rows]
+    turbs = [float(r["turbidez"])    for r in rows]
     temps = [float(r["temperatura"]) for r in rows]
-    pers = [int(r["personas"] or 0) for r in rows]
 
+    # Total de personas viene de aforo_manual (no de medicion)
+    cur2 = conn.cursor()
+    cur2.execute(
+        "SELECT COALESCE(SUM(total_personas), 0) FROM aforo_manual WHERE id_jornada = %s",
+        (id_jornada,),
+    )
+    total_personas = int(cur2.fetchone()[0])
+    cur2.close()
+
+    n = len(phs)
     nuevo = {
-        "promedio_ph": round(sum(phs) / len(phs), 3),
-        "max_ph": max(phs),
-        "min_ph": min(phs),
-        "promedio_turbidez": round(sum(turbs) / len(turbs), 3),
-        "max_turbidez": max(turbs),
-        "promedio_temperatura": round(sum(temps) / len(temps), 3),
-        "total_personas": sum(pers),
-        "promedio_personas": round(sum(pers) / len(pers), 3),
-        "pico_personas": max(pers),
+        "promedio_ph":          round(sum(phs)   / n, 3),
+        "max_ph":               max(phs),
+        "min_ph":               min(phs),
+        "promedio_turbidez":    round(sum(turbs)  / n, 3),
+        "max_turbidez":         max(turbs),
+        "promedio_temperatura": round(sum(temps)  / n, 3),
+        "total_personas":       total_personas,
+        "promedio_personas":    round(total_personas / n, 3),
+        "pico_personas":        total_personas,
     }
 
     cur = conn.cursor()
-    cur.execute(
-        "SELECT 1 FROM resumen_diario WHERE id_jornada = %s",
-        (id_jornada,),
-    )
+    cur.execute("SELECT 1 FROM resumen_diario WHERE id_jornada = %s", (id_jornada,))
     existe = cur.fetchone() is not None
 
     if existe:
         cur.execute(
             """
             UPDATE resumen_diario SET
-                promedio_ph = %s,
-                max_ph = %s,
-                min_ph = %s,
-                promedio_turbidez = %s,
-                max_turbidez = %s,
+                promedio_ph = %s, max_ph = %s, min_ph = %s,
+                promedio_turbidez = %s, max_turbidez = %s,
                 promedio_temperatura = %s,
-                total_personas = %s,
-                promedio_personas = %s,
-                pico_personas = %s
+                total_personas = %s, promedio_personas = %s, pico_personas = %s
             WHERE id_jornada = %s
             """,
             (
@@ -154,8 +159,8 @@ def correr_prediccion(conn, id_jornada: int, resumen: dict):
         cur = get_dict_cursor(conn)
         cur.execute(
             """
-            SELECT ph, turbidez, temperatura, personas
-            FROM mediciones WHERE id_jornada = %s ORDER BY fecha_hora ASC
+            SELECT ph, turbidez, temperatura
+            FROM medicion WHERE id_jornada = %s ORDER BY fecha_hora ASC
             """,
             (id_jornada,),
         )
