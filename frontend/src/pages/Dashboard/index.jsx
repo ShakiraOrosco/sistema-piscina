@@ -113,19 +113,19 @@ export default function Dashboard() {
   return (
     <>
       {/* TARJETAS INTERACTIVAS */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         
         {/* pH Card */}
         <div 
           onClick={() => setSelectedSensor('ph')}
-          className={`cursor-pointer rounded-2xl border p-6 shadow-sm transition-all ${selectedSensor === 'ph' ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/20 dark:bg-blue-900/10' : 'border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] hover:border-blue-300'}`}
+          className={`cursor-pointer rounded-2xl border p-5 shadow-sm transition-all ${selectedSensor === 'ph' ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/20 dark:bg-blue-900/10' : 'border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] hover:border-blue-300'}`}
         >
-          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-lg font-bold">
+          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-lg font-bold">
             pH
           </div>
           <div className="flex items-end justify-between">
             <div>
-              <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Sensor de pH</span>
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Sensor de pH</span>
               <h4 className="mt-1 text-2xl font-bold text-slate-800 dark:text-white">
                 {formatValue(measurement?.ph)}
               </h4>
@@ -139,9 +139,9 @@ export default function Dashboard() {
         {/* Turbidez Card */}
         <div 
           onClick={() => setSelectedSensor('turbidez')}
-          className={`cursor-pointer rounded-2xl border p-6 shadow-sm transition-all ${selectedSensor === 'turbidez' ? 'border-orange-500 ring-2 ring-orange-500/20 bg-orange-50/20 dark:bg-orange-900/10' : 'border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] hover:border-orange-300'}`}
+          className={`cursor-pointer rounded-2xl border p-5 shadow-sm transition-all ${selectedSensor === 'turbidez' ? 'border-orange-500 ring-2 ring-orange-500/20 bg-orange-50/20 dark:bg-orange-900/10' : 'border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] hover:border-orange-300'}`}
         >
-          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400">
+          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               <path d="M8 14C8 14 9.5 16 12 16C14.5 16 16 14 16 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -149,9 +149,9 @@ export default function Dashboard() {
           </div>
           <div className="flex items-end justify-between">
             <div>
-              <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Sensor Turbidez</span>
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Sensor Turbidez</span>
               <h4 className="mt-1 text-2xl font-bold text-slate-800 dark:text-white">
-                {formatValue(measurement?.turbidez)} <span className="text-sm font-medium text-slate-500 dark:text-slate-400">NTU</span>
+                {formatValue(measurement?.turbidez)} <span className="text-xs font-medium text-slate-500 dark:text-slate-400">NTU</span>
               </h4>
             </div>
             <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${turbidityState(measurement?.turbidez) === 'normal' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400'}`}>
@@ -163,26 +163,26 @@ export default function Dashboard() {
         {/* Temperatura Card */}
         <div 
           onClick={() => setSelectedSensor('temperatura')}
-          className={`cursor-pointer rounded-2xl border p-6 shadow-sm transition-all ${selectedSensor === 'temperatura' ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/20 dark:bg-emerald-900/10' : 'border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] hover:border-emerald-300'}`}
+          className={`cursor-pointer rounded-2xl border p-5 shadow-sm transition-all ${selectedSensor === 'temperatura' ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/20 dark:bg-emerald-900/10' : 'border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] hover:border-emerald-300'}`}
         >
-          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400">
+          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M14 14.76V3.5C14 2.67157 13.3284 2 12.5 2C11.6716 2 11 2.67157 11 3.5V14.76C9.20914 15.6318 8 17.5255 8 19.5C8 22.5376 10.0147 24 12.5 24C14.9853 24 17 22.5376 17 19.5C17 17.5255 15.7909 15.6318 14 14.76Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </div>
           <div className="flex items-end justify-between">
             <div>
-              <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Sensor Temperatura</span>
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Sensor Temperatura</span>
               <h4 className="mt-1 text-2xl font-bold text-slate-800 dark:text-white">
-                {formatValue(measurement?.temperatura)} <span className="text-sm font-medium text-slate-500 dark:text-slate-400">°C</span>
+                {formatValue(measurement?.temperatura)} <span className="text-xs font-medium text-slate-500 dark:text-slate-400">°C</span>
               </h4>
             </div>
           </div>
         </div>
 
-        {/* Personas Card */}
-        <div className="rounded-2xl border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] p-6 shadow-sm">
-          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400">
+        {/* Aforo Manual Card */}
+        <div className="rounded-2xl border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] p-5 shadow-sm">
+          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M17 21V19C17 17.9391 16.5786 16.9217 15.8284 16.1716C15.0783 15.4214 14.0609 15 13 15H5C3.93913 15 2.92172 15.4214 2.17157 16.1716C1.42143 16.9217 1 17.9391 1 19V21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               <path d="M9 11C11.2091 11 13 9.20914 13 7C13 4.79086 11.2091 3 9 3C6.79086 3 5 4.79086 5 7C5 9.20914 6.79086 11 9 11Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -190,13 +190,33 @@ export default function Dashboard() {
           </div>
           <div className="flex items-end justify-between">
             <div>
-              <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Aforo Actual</span>
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Aforo Manual</span>
               <h4 className="mt-1 text-2xl font-bold text-slate-800 dark:text-white">
-                {sensorData?.personas_hoy ?? summary?.total_personas ?? '0'}
+                {sensorData?.aforo_manual ?? sensorData?.personas_hoy ?? summary?.total_personas ?? '0'}
               </h4>
             </div>
-            <span className="rounded-full bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-              Personas hoy
+            <span className="rounded-full bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+              Taquilla
+            </span>
+          </div>
+        </div>
+
+        {/* Aforo Cámara Card */}
+        <div className="rounded-2xl border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] p-5 shadow-sm">
+          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M15 10L21 6V18L15 14M4 18H13C14.1046 18 15 17.1046 15 16V8C15 6.89543 14.1046 6 13 6H4C2.89543 6 2 6.89543 2 8V16C2 17.1046 2.89543 18 4 18Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <div className="flex items-end justify-between">
+            <div>
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Aforo Cámara</span>
+              <h4 className="mt-1 text-2xl font-bold text-slate-800 dark:text-white">
+                {sensorData?.aforo_camara ?? '0'}
+              </h4>
+            </div>
+            <span className="rounded-full bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 text-[10px] font-semibold text-purple-600 dark:text-purple-400">
+              Cámara IA
             </span>
           </div>
         </div>

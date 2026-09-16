@@ -94,3 +94,28 @@ def enviar_password_temporal(destinatario: str, nombre: str, password: str) -> N
         if settings.SMTP_USER:
             servidor.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
         servidor.send_message(mensaje)
+
+
+def enviar_password_recuperacion(destinatario: str, nombre: str, password: str) -> None:
+    if not settings.SMTP_HOST or not settings.SMTP_FROM:
+        raise RuntimeError("El correo no está configurado. Define SMTP_HOST y SMTP_FROM")
+
+    mensaje = EmailMessage()
+    mensaje["Subject"] = "Restablecimiento de contraseña - Piscina Playa Azul"
+    mensaje["From"] = settings.SMTP_FROM
+    mensaje["To"] = destinatario
+    mensaje.set_content(
+        f"Hola {nombre},\n\n"
+        "Has solicitado restablecer tu contraseña para ingresar al sistema de la piscina.\n\n"
+        f"Tu nueva contraseña temporal es: {password}\n\n"
+        "Usa esta contraseña para iniciar sesión. Al ingresar, el sistema te solicitará "
+        "crear una nueva contraseña personalizada para tu seguridad.\n\n"
+        "Si no solicitaste este cambio, por favor ponte en contacto con el administrador."
+    )
+
+    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as servidor:
+        if settings.SMTP_USE_TLS:
+            servidor.starttls()
+        if settings.SMTP_USER:
+            servidor.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+        servidor.send_message(mensaje)

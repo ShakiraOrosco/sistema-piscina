@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from .routers.auth import router as auth_router
 from .routers.monitoring import router
 from .routers.caja import router as caja_router
+from .routers.inventario import router as inventario_router
+from .routers.auditoria import router as auditoria_router
 
 app = FastAPI(
     title="Sistema de Monitoreo y Dosificación de Piscina",
@@ -24,3 +26,5 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(auth_router)
 app.include_router(caja_router)
+app.include_router(inventario_router)
+app.include_router(auditoria_router)

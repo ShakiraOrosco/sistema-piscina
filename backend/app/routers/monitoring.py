@@ -54,6 +54,7 @@ async def crear_lectura(payload: Dict[str, Any]):
     try:
         id_jornada = obtener_o_crear_jornada_hoy(conn)
         cur = conn.cursor()
+        # Usar hora local del sistema
         fecha_hora = datetime.now()
         cur.execute(
             """
@@ -132,12 +133,19 @@ async def estado_actual():
         )
         med = cur.fetchone()
 
-        # Total personas desde aforo_manual
+        # Total personas desde aforo_manual (Taquilla)
         cur.execute(
             "SELECT COALESCE(SUM(total_personas),0) AS personas FROM aforo_manual WHERE id_jornada = %s",
             (id_jornada,),
         )
-        personas_row = cur.fetchone()
+        personas_manual_row = cur.fetchone()
+
+        # Último aforo detectado por la Cámara Inteligente
+        cur.execute(
+            "SELECT cantidad_personas FROM aforo_camara WHERE id_jornada = %s ORDER BY fecha_hora DESC LIMIT 1",
+            (id_jornada,),
+        )
+        personas_camara_row = cur.fetchone()
 
         cur.execute("SELECT * FROM resumen_diario WHERE id_jornada = %s", (id_jornada,))
         resumen_row = cur.fetchone()
@@ -164,11 +172,16 @@ async def estado_actual():
         )
         historial = [serializar_dict(r) for r in cur.fetchall()]
 
+        aforo_manual = int(personas_manual_row["personas"]) if personas_manual_row else 0
+        aforo_camara = int(personas_camara_row["cantidad_personas"]) if personas_camara_row else 0
+
         return {
             "id_jornada": id_jornada,
             "fecha": date.today().isoformat(),
             "ultima_medicion": serializar_dict(med),
-            "personas_hoy": int(personas_row["personas"]) if personas_row else 0,
+            "aforo_manual": aforo_manual,
+            "aforo_camara": aforo_camara,
+            "personas_hoy": aforo_manual,
             "resumen": serializar_dict(resumen_row),
             "prediccion": serializar_dict(pred),
             "historial": historial,
@@ -187,7 +200,8 @@ async def predecir_ahora():
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id_jornada FROM jornada WHERE fecha = CURRENT_DATE ORDER BY id_jornada DESC LIMIT 1"
+            "SELECT id_jornada FROM jornada WHERE fecha = %s ORDER BY id_jornada DESC LIMIT 1",
+            (date.today(),)
         )
         row = cur.fetchone()
         if not row:
@@ -221,9 +235,10 @@ async def alertas():
             SELECT m.ph, m.turbidez, m.temperatura, m.fecha_hora
             FROM medicion m
             JOIN jornada j ON j.id_jornada = m.id_jornada
-            WHERE j.fecha = CURRENT_DATE
+            WHERE j.fecha = %s
             ORDER BY m.fecha_hora DESC LIMIT 1
-            """
+            """,
+            (date.today(),)
         )
         row = cur.fetchone()
 
