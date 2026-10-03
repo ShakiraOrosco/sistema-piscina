@@ -80,6 +80,80 @@ async def crear_lectura(payload: Dict[str, Any]):
         conn.close()
 
 
+@router.post("/api/v1/aforo-camara", status_code=201)
+@router.post("/api/aforo-camara", status_code=201)
+async def registrar_aforo_camara(payload: Dict[str, Any]):
+    """Guarda una lectura del aforo detectado por la cámara inteligente en `aforo_camara`."""
+    if payload is None or "cantidad_personas" not in payload:
+        raise HTTPException(status_code=400, detail="Se requiere el campo 'cantidad_personas'")
+
+    try:
+        cantidad = int(payload["cantidad_personas"])
+        id_dispositivo = str(payload.get("id_dispositivo", "ESP32-CAM"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Valor de cantidad inválido: {exc}") from exc
+
+    conn = get_connection()
+    if conn is None:
+        raise HTTPException(status_code=500, detail="No se pudo conectar a la base de datos")
+
+    try:
+        id_jornada = obtener_o_crear_jornada_hoy(conn)
+        cur = conn.cursor()
+        fecha_hora = datetime.now()
+        cur.execute(
+            """
+            INSERT INTO aforo_camara (id_jornada, fecha_hora, cantidad_personas, id_dispositivo)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id_registro
+            """,
+            (id_jornada, fecha_hora, cantidad, id_dispositivo),
+        )
+        id_registro = cur.fetchone()[0]
+        conn.commit()
+        cur.close()
+
+        return {
+            "mensaje": "Aforo de cámara registrado correctamente",
+            "id_registro": id_registro,
+            "id_jornada": id_jornada,
+            "cantidad_personas": cantidad,
+        }
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        conn.close()
+
+
+@router.get("/api/v1/camera/roi")
+@router.get("/api/camera/roi")
+async def obtener_geocerca_roi():
+    """Obtiene la configuración de la geocerca (delimitación del área de piscina)."""
+    try:
+        from detector_camara import load_roi_config
+    except ImportError:
+        from backend.detector_camara import load_roi_config
+    return load_roi_config()
+
+
+@router.post("/api/v1/camera/roi")
+@router.post("/api/camera/roi")
+async def actualizar_geocerca_roi(payload: Dict[str, Any]):
+    """Actualiza la configuración del polígono de la geocerca de la piscina."""
+    try:
+        from detector_camara import save_roi_config
+    except ImportError:
+        from backend.detector_camara import save_roi_config
+    if not payload:
+        raise HTTPException(status_code=400, detail="Se requieren datos JSON")
+    
+    save_roi_config(payload)
+    return {"mensaje": "Configuración de geocerca actualizada correctamente", "roi": payload}
+
+
+
+
 @router.get("/lecturas")
 async def obtener_lecturas():
     conn = get_connection()
