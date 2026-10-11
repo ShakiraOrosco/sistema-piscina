@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { monitoringApi } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
+import PrediccionPanel from '../../components/PrediccionPanel'
 import {
   ResponsiveContainer,
-  LineChart,
+  ComposedChart,
+  Area,
   Line,
   XAxis,
   YAxis,
@@ -47,15 +49,44 @@ export default function Dashboard() {
     return () => window.clearInterval(intervalId)
   }, [])
 
+  const predecirAhora = async () => {
+    try {
+      await monitoringApi.post('/api/predecir')
+      await loadSensorData()
+    } catch (requestError) {
+      if (showError) {
+        showError(requestError.response?.data?.detail || 'No se pudo generar la predicción')
+      }
+    }
+  }
+
   const measurement = sensorData?.ultima_medicion
   const summary = sensorData?.resumen
   const rawReadings = sensorData?.historial || []
+  const pronostico = sensorData?.pronostico || {}
+  const estadoSensores = sensorData?.estado_sensores || {}
+  const estimados = sensorData?.valores_estimados || {}
+
+  // Un sensor "falló" si no envió dato, envió algo fuera de rango o se desconectó
+  const sensorFallo = (v) => ['sin_dato', 'fuera_rango', 'sin_conexion'].includes(estadoSensores?.[v]?.estado)
+  const ultimoValido = (v) => {
+    for (let i = rawReadings.length - 1; i >= 0; i--) {
+      if (rawReadings[i][v] !== null && rawReadings[i][v] !== undefined) return rawReadings[i][v]
+    }
+    return null
+  }
+  // Valor a mostrar en la tarjeta: estimado si el sensor falló, si no la última lectura válida
+  const valorSensor = (v) => {
+    if (sensorFallo(v) && estimados?.[v]) return estimados[v].valor
+    return measurement?.[v] ?? ultimoValido(v)
+  }
 
   // Ordenar rawReadings de más reciente a más antigua para la tabla
   const sortedReadings = [...rawReadings].sort((a, b) => new Date(b.fecha_hora) - new Date(a.fecha_hora))
 
   // Formatear lecturas para los gráficos (cronológico ascendente de izquierda a derecha)
   const chartData = [...sortedReadings].reverse().map((r) => ({
+    ts: new Date(r.fecha_hora).getTime(),
     hora: formatTime(r.fecha_hora),
     pH: r.ph !== null && r.ph !== undefined ? Number(Number(r.ph).toFixed(2)) : null,
     Turbidez: r.turbidez !== null && r.turbidez !== undefined ? Number(Number(r.turbidez).toFixed(2)) : null,
@@ -110,6 +141,25 @@ export default function Dashboard() {
     },
   }
 
+  // Combinar lecturas reales + pronóstico del sensor seleccionado
+  const cfgSel = sensorConfig[selectedSensor]
+  const seriePron = pronostico?.[selectedSensor] || []
+  const puntosReales = chartData.map((p) => ({ ...p }))
+  const ultimoReal = [...puntosReales].reverse().find((p) => p[cfgSel.dataKey] !== null)
+  if (ultimoReal && seriePron.length) {
+    // Ancla: el pronóstico arranca en la última lectura real para que la línea sea continua
+    ultimoReal.Pronostico = ultimoReal[cfgSel.dataKey]
+    ultimoReal.Rango = [ultimoReal[cfgSel.dataKey], ultimoReal[cfgSel.dataKey]]
+  }
+  const puntosPron = seriePron.map((p) => ({
+    ts: new Date(p.fecha_hora).getTime(),
+    hora: formatTime(p.fecha_hora),
+    Pronostico: Number(Number(p.valor).toFixed(2)),
+    Rango: [Number(Number(p.inferior).toFixed(2)), Number(Number(p.superior).toFixed(2))],
+  }))
+  const chartCombinado = [...puntosReales, ...puntosPron].sort((a, b) => a.ts - b.ts)
+  const hayPronostico = puntosPron.length > 0
+
   return (
     <>
       {/* TARJETAS INTERACTIVAS */}
@@ -126,12 +176,21 @@ export default function Dashboard() {
           <div className="flex items-end justify-between">
             <div>
               <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Sensor de pH</span>
-              <h4 className="mt-1 text-2xl font-bold text-slate-800 dark:text-white">
-                {formatValue(measurement?.ph)}
+              <h4 className="mt-1 text-2xl font-bold text-slate-800 dark:text-white flex items-baseline gap-1.5">
+                {formatValue(valorSensor('ph'))}
+                {sensorFallo('ph') && (
+                  <span className="text-xs font-semibold text-amber-500" title="Valor estimado por falla de sensor">~est.</span>
+                )}
               </h4>
             </div>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${phState(measurement?.ph) === 'normal' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400'}`}>
-              {phState(measurement?.ph) === 'normal' ? 'Óptimo' : 'Alerta'}
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+              sensorFallo('ph')
+                ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400'
+                : phState(valorSensor('ph')) === 'normal'
+                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400'
+                : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400'
+            }`}>
+              {sensorFallo('ph') ? 'Estimado' : phState(valorSensor('ph')) === 'normal' ? 'Óptimo' : 'Alerta'}
             </span>
           </div>
         </div>
@@ -150,12 +209,21 @@ export default function Dashboard() {
           <div className="flex items-end justify-between">
             <div>
               <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Sensor Turbidez</span>
-              <h4 className="mt-1 text-2xl font-bold text-slate-800 dark:text-white">
-                {formatValue(measurement?.turbidez)} <span className="text-xs font-medium text-slate-500 dark:text-slate-400">NTU</span>
+              <h4 className="mt-1 text-2xl font-bold text-slate-800 dark:text-white flex items-baseline gap-1.5">
+                {formatValue(valorSensor('turbidez'))} <span className="text-xs font-medium text-slate-500 dark:text-slate-400">NTU</span>
+                {sensorFallo('turbidez') && (
+                  <span className="text-xs font-semibold text-amber-500" title="Valor estimado por falla de sensor">~est.</span>
+                )}
               </h4>
             </div>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${turbidityState(measurement?.turbidez) === 'normal' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400'}`}>
-              {turbidityState(measurement?.turbidez) === 'normal' ? 'Limpio' : 'Alerta'}
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+              sensorFallo('turbidez')
+                ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400'
+                : turbidityState(valorSensor('turbidez')) === 'normal'
+                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400'
+                : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400'
+            }`}>
+              {sensorFallo('turbidez') ? 'Estimado' : turbidityState(valorSensor('turbidez')) === 'normal' ? 'Limpio' : 'Alerta'}
             </span>
           </div>
         </div>
@@ -173,10 +241,18 @@ export default function Dashboard() {
           <div className="flex items-end justify-between">
             <div>
               <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Sensor Temperatura</span>
-              <h4 className="mt-1 text-2xl font-bold text-slate-800 dark:text-white">
-                {formatValue(measurement?.temperatura)} <span className="text-xs font-medium text-slate-500 dark:text-slate-400">°C</span>
+              <h4 className="mt-1 text-2xl font-bold text-slate-800 dark:text-white flex items-baseline gap-1.5">
+                {formatValue(valorSensor('temperatura'))} <span className="text-xs font-medium text-slate-500 dark:text-slate-400">°C</span>
+                {sensorFallo('temperatura') && (
+                  <span className="text-xs font-semibold text-amber-500" title="Valor estimado por falla de sensor">~est.</span>
+                )}
               </h4>
             </div>
+            {sensorFallo('temperatura') && (
+              <span className="rounded-full bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                Estimado
+              </span>
+            )}
           </div>
         </div>
 
@@ -223,6 +299,14 @@ export default function Dashboard() {
 
       </div>
 
+      {/* PREDICCIÓN LSTM DE DOSIFICACIÓN */}
+      <PrediccionPanel
+        prediccion={sensorData?.prediccion}
+        detalle={sensorData?.prediccion_detalle}
+        dosisAplicadas={sensorData?.dosis_aplicadas}
+        onPredecir={predecirAhora}
+      />
+
       {/* BOTONES DE SELECCIÓN DE SENSOR */}
       <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
@@ -261,19 +345,24 @@ export default function Dashboard() {
         <div className="rounded-2xl border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] p-7 shadow-sm xl:col-span-2">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h4 className="text-xl font-bold text-slate-800 dark:text-white">
+              <h4 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-3">
                 {sensorConfig[selectedSensor]?.title}
+                {hayPronostico && (
+                  <span className="rounded-full bg-violet-50 dark:bg-violet-900/20 px-3 py-1 text-xs font-semibold text-violet-600 dark:text-violet-300">
+                    -- Pronóstico a 20:00
+                  </span>
+                )}
               </h4>
               <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                {`Historial de mediciones (${sensorConfig[selectedSensor]?.unit || 'unidades'})`}
+                {`Historial real (línea continua) y tendencia estimada hasta el cierre (línea punteada)`}
               </p>
             </div>
           </div>
 
           <div className="h-80 w-full">
-            {chartData.length > 0 ? (
+            {chartCombinado.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 15, right: 30, left: 0, bottom: 5 }}>
+                <ComposedChart data={chartCombinado} margin={{ top: 15, right: 30, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.6} />
                   <XAxis dataKey="hora" stroke="#64748b" fontSize={11} />
                   <YAxis 
@@ -290,17 +379,42 @@ export default function Dashboard() {
                   {sensorConfig[selectedSensor].maxOpt && (
                     <ReferenceLine y={sensorConfig[selectedSensor].maxOpt} label={{ value: 'Max Óptimo (7.6)', fill: '#10b981', fontSize: 10 }} stroke="#10b981" strokeDasharray="4 4" />
                   )}
+
+                  {/* Banda de confianza para el pronóstico */}
+                  <Area
+                    type="linear"
+                    dataKey="Rango"
+                    stroke="none"
+                    fill={sensorConfig[selectedSensor].color}
+                    fillOpacity={0.12}
+                    name="Rango de confianza (95%)"
+                  />
                   
+                  {/* Línea real */}
                   <Line 
                     type="linear" 
-                    name={sensorConfig[selectedSensor].title} 
+                    name={`${sensorConfig[selectedSensor].dataKey} Real`}
                     dataKey={sensorConfig[selectedSensor].dataKey} 
                     stroke={sensorConfig[selectedSensor].color} 
                     strokeWidth={3} 
                     dot={{ r: 4, fill: sensorConfig[selectedSensor].color, strokeWidth: 1.5, stroke: '#fff' }}
                     activeDot={{ r: 6 }}
+                    connectNulls={false}
                   />
-                </LineChart>
+
+                  {/* Línea punteada de pronóstico */}
+                  <Line 
+                    type="linear" 
+                    name={`${sensorConfig[selectedSensor].dataKey} Pronosticado`}
+                    dataKey="Pronostico" 
+                    stroke={sensorConfig[selectedSensor].color} 
+                    strokeWidth={2.5} 
+                    strokeDasharray="5 5"
+                    dot={{ r: 3, fill: '#fff', strokeWidth: 2, stroke: sensorConfig[selectedSensor].color }}
+                    activeDot={{ r: 5 }}
+                    connectNulls={true}
+                  />
+                </ComposedChart>
               </ResponsiveContainer>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-slate-400">
@@ -310,27 +424,78 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Alertas */}
+        {/* Alertas y Acciones en Vivo */}
         <div className="rounded-2xl border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] p-7 shadow-sm xl:col-span-1">
           <div className="mb-6 flex items-center justify-between">
-            <h4 className="text-xl font-bold text-slate-800 dark:text-white">Alertas del Sistema</h4>
+            <h4 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+              Alertas en Vivo
+              {sensorData?.alertas?.some(a => a.tipo === 'action') && (
+                <span className="flex h-2.5 w-2.5 rounded-full bg-blue-500 animate-ping"></span>
+              )}
+            </h4>
           </div>
 
           <div className="flex flex-col gap-4">
-            {sensorData?.alertas?.length ? sensorData.alertas.map((alert, index) => (
-              <div className={`flex items-start gap-3 rounded-lg border p-4 ${alert.tipo === 'ok' ? 'border-emerald-100 dark:border-emerald-900/30 bg-emerald-50/50 dark:bg-emerald-900/10' : 'border-red-100 dark:border-red-900/30 bg-red-50/50 dark:bg-red-900/10'}`} key={index}>
-                <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${alert.tipo === 'ok' ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400' : 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400'}`}>
-                  {alert.tipo === 'ok' ? (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
-                  ) : (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            {sensorData?.alertas?.length ? sensorData.alertas.map((alert, index) => {
+              const esAccion = alert.tipo === 'action';
+              const esOk = alert.tipo === 'ok';
+              
+              return (
+                <div 
+                  className={`flex flex-col gap-3 rounded-lg border p-4 ${
+                    esOk ? 'border-emerald-100 dark:border-emerald-900/30 bg-emerald-50/50 dark:bg-emerald-900/10' : 
+                    esAccion ? 'border-blue-200 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-900/20 shadow-sm' : 
+                    'border-red-100 dark:border-red-900/30 bg-red-50/50 dark:bg-red-900/10'
+                  }`} 
+                  key={index}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${
+                      esOk ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400' : 
+                      esAccion ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400' : 
+                      'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400'
+                    }`}>
+                      {esOk ? (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                      ) : esAccion ? (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                      ) : (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                      )}
+                    </div>
+                    <p className={`text-sm font-medium leading-relaxed ${
+                      esOk ? 'text-emerald-800 dark:text-emerald-400' : 
+                      esAccion ? 'text-blue-900 dark:text-blue-300' : 
+                      'text-red-800 dark:text-red-400'
+                    }`}>
+                      {alert.msg}
+                    </p>
+                  </div>
+                  
+                  {esAccion && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          await monitoringApi.post('/api/dosificacion_parcial', { 
+                            quimico: alert.quimico, 
+                            cantidad_g: alert.cantidad 
+                          });
+                          await loadSensorData();
+                        } catch (e) {
+                          if (showError) showError('Error al registrar la micro-dosis');
+                        }
+                      }}
+                      className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition-all hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    >
+                      <span>Aplicar Dosis ({alert.cantidad}g)</span>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
                   )}
                 </div>
-                <p className={`text-sm font-medium leading-relaxed ${alert.tipo === 'ok' ? 'text-emerald-800 dark:text-emerald-400' : 'text-red-800 dark:text-red-400'}`}>
-                  {alert.msg}
-                </p>
-              </div>
-            )) : (
+              );
+            }) : (
               <div className="flex items-center gap-3 rounded-lg border border-slate-100 dark:border-[#313D4A] bg-slate-50 dark:bg-[#1A222C] p-4">
                 <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Sin alertas hoy.</p>
               </div>
