@@ -6,14 +6,19 @@ import { Navigate } from 'react-router-dom'
 export default function UsersPage() {
   const { session, authConfig, showError, showMessage } = useAuth()
   const [users, setUsers] = useState([])
+  const [roles, setRoles] = useState([])
   const [loading, setLoading] = useState(false)
   const [userForm, setUserForm] = useState(null)
 
-  const loadUsers = async () => {
+  const loadData = async () => {
     setLoading(true)
     try {
-      const { data } = await api.get('/auth/users', authConfig())
-      setUsers(data)
+      const [{ data: usersData }, { data: rolesData }] = await Promise.all([
+        api.get('/auth/users', authConfig()),
+        api.get('/auth/roles', authConfig()),
+      ])
+      setUsers(usersData)
+      setRoles(rolesData)
     } catch (requestError) {
       showError(requestError)
     } finally {
@@ -23,7 +28,7 @@ export default function UsersPage() {
 
   useEffect(() => {
     if (session?.usuario?.sigla_rol === 'ADM') {
-      loadUsers()
+      loadData()
     }
   }, [session])
 
@@ -42,7 +47,7 @@ export default function UsersPage() {
       const { data } = await request
       setUserForm(null)
       showMessage(data.mensaje)
-      await loadUsers()
+      await loadData()
     } catch (requestError) {
       showError(requestError)
     }
@@ -53,10 +58,16 @@ export default function UsersPage() {
     try {
       const { data } = await api.delete(`/auth/users/${user.id_usuario}`, authConfig())
       showMessage(data.mensaje)
-      await loadUsers()
+      await loadData()
     } catch (requestError) {
       showError(requestError)
     }
+  }
+
+  // Mapeo rápido de sigla a nombre completo de rol
+  const getRolNombre = (sigla) => {
+    const rol = roles.find((r) => r.sigla === sigla)
+    return rol ? rol.nombre : sigla
   }
 
   return (
@@ -111,7 +122,7 @@ export default function UsersPage() {
                     </td>
                     <td className="py-4 px-4">
                       <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                        {user.sigla_rol === 'ADM' ? 'Administrador' : 'Operador'}
+                        {getRolNombre(user.sigla_rol)}
                       </span>
                     </td>
                     <td className="py-4 px-4">
@@ -138,12 +149,12 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {userForm && <UserModal user={userForm} onClose={() => setUserForm(null)} onSubmit={submitUser} />}
+      {userForm && <UserModal user={userForm} roles={roles} onClose={() => setUserForm(null)} onSubmit={submitUser} />}
     </>
   )
 }
 
-function UserModal({ user, onClose, onSubmit }) {
+function UserModal({ user, roles, onClose, onSubmit }) {
   return (
     <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm px-4 py-5">
       <div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] p-8 shadow-2xl">
@@ -182,9 +193,12 @@ function UserModal({ user, onClose, onSubmit }) {
 
           <div className="mb-8">
             <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Rol</label>
-            <select name="sigla_rol" defaultValue={user.sigla_rol || 'OPE'} className="w-full rounded-lg border border-slate-300 dark:border-[#313D4A] bg-transparent dark:bg-[#1A222C] px-4 py-2.5 text-slate-800 dark:text-white outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600">
-              <option value="OPE">Operador</option>
-              <option value="ADM">Administrador</option>
+            <select name="sigla_rol" defaultValue={user.sigla_rol || (roles.length > 0 ? roles[0].sigla : 'OPE')} className="w-full rounded-lg border border-slate-300 dark:border-[#313D4A] bg-transparent dark:bg-[#1A222C] px-4 py-2.5 text-slate-800 dark:text-white outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600">
+              {roles.map((rol) => (
+                <option key={rol.sigla} value={rol.sigla}>
+                  {rol.nombre} ({rol.sigla})
+                </option>
+              ))}
             </select>
           </div>
 

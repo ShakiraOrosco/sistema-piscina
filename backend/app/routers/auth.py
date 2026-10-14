@@ -4,16 +4,18 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
 
 from ..config import settings
 from ..db import get_connection, get_dict_cursor
+from ..routers.auditoria import registrar_log
 from ..services.auth_service import (
     crear_token,
     crear_token_2fa,
     enviar_codigo_2fa,
+    enviar_password_recuperacion,
     enviar_password_temporal,
     generar_codigo_2fa,
     generar_password_temporal,
@@ -23,6 +25,24 @@ from ..services.auth_service import (
 
 router = APIRouter(prefix="/api/v1/auth", tags=["autenticacion"])
 bearer = HTTPBearer()
+
+
+class OlvidePassword(BaseModel):
+    correo: EmailStr
+
+
+@router.get("/roles")
+def listar_roles():
+    """Obtiene la lista de roles desde la base de datos."""
+    conn = get_connection()
+    if conn is None:
+        raise HTTPException(status_code=500, detail="No se pudo conectar a Supabase")
+    try:
+        cur = get_dict_cursor(conn)
+        cur.execute("SELECT sigla, nombre FROM rol_usuario ORDER BY nombre ASC")
+        return cur.fetchall()
+    finally:
+        conn.close()
 
 
 class CrearUsuario(BaseModel):
@@ -118,11 +138,12 @@ def crear_usuario(payload: CrearUsuario, _: Annotated[dict, Depends(administrado
 
 
 @router.post("/login")
-def iniciar_sesion(payload: Login):
+def iniciar_sesion(payload: Login, request: Request):
     conn = get_connection()
     if conn is None:
         raise HTTPException(status_code=500, detail="No se pudo conectar a Supabase")
     try:
+        ip_cliente = request.client.host if request.client else None
         cur = get_dict_cursor(conn)
         cur.execute(
             "SELECT id_usuario, nombre, primer_apellido, segundo_apellido, correo, password, sigla_rol, debe_cambiar_password, doble_factor_activo FROM usuario WHERE correo = %s AND activo = TRUE",
@@ -130,7 +151,29 @@ def iniciar_sesion(payload: Login):
         )
         usuario = cur.fetchone()
         if not usuario or not verificar_password(payload.password, usuario["password"]):
+            # Registrar intento fallido de inicio de sesión
+            registrar_log(
+                conn=conn,
+                id_usuario=usuario["id_usuario"] if usuario else None,
+                modulo="Autenticación",
+                accion="LOGIN_FAILED",
+                entidad="usuario",
+                detalle={"correo_intentado": payload.correo, "motivo": "Contraseña o usuario inválido"},
+                ip_origen=ip_cliente,
+            )
             raise HTTPException(status_code=401, detail="Correo o contraseña inválidos")
+
+        # Login exitoso: Registrar auditoría
+        registrar_log(
+            conn=conn,
+            id_usuario=usuario["id_usuario"],
+            modulo="Autenticación",
+            accion="LOGIN_SUCCESS",
+            entidad="usuario",
+            detalle={"correo": usuario["correo"], "sigla_rol": usuario["sigla_rol"]},
+            ip_origen=ip_cliente,
+        )
+
         debe_cambiar = usuario["debe_cambiar_password"]
         if usuario["doble_factor_activo"]:
             codigo = generar_codigo_2fa()
@@ -349,5 +392,45 @@ def cambiar_password(payload: CambiarPassword, claims: Annotated[dict, Depends(u
     except HTTPException:
         conn.rollback()
         raise
+    finally:
+        conn.close()
+
+
+@router.post("/forgot-password")
+def recuperar_password(payload: OlvidePassword):
+    conn = get_connection()
+    if conn is None:
+        raise HTTPException(status_code=500, detail="No se pudo conectar a Supabase")
+    try:
+        cur = get_dict_cursor(conn)
+        cur.execute(
+            "SELECT id_usuario, nombre, primer_apellido, correo FROM usuario WHERE correo = %s AND activo = TRUE",
+            (payload.correo,),
+        )
+        usuario = cur.fetchone()
+        if not usuario:
+            # Por seguridad no revelamos si existe o no
+            return {"mensaje": "Si el correo está registrado, recibirás las instrucciones para restablecer tu contraseña."}
+
+        temp_password = generar_password_temporal()
+        hashed = hash_password(temp_password)
+
+        cur.execute(
+            "UPDATE usuario SET password = %s, debe_cambiar_password = TRUE WHERE id_usuario = %s",
+            (hashed, usuario["id_usuario"]),
+        )
+        enviar_password_recuperacion(
+            usuario["correo"],
+            f"{usuario['nombre']} {usuario['primer_apellido']}",
+            temp_password,
+        )
+        conn.commit()
+        return {"mensaje": "Si el correo está registrado, recibirás las instrucciones para restablecer tu contraseña."}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     finally:
         conn.close()
