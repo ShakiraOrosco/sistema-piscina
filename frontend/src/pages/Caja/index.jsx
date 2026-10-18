@@ -161,6 +161,29 @@ function HistorialRow({ registro, index, onVerDetalle }) {
   )
 }
 
+// ─── Funciones Auxiliares para Fechas ─────────────────────────────────────────
+function getHoyISO() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function formatearFechaLegible(fechaStr) {
+  if (!fechaStr) return ''
+  const partes = fechaStr.split('-')
+  if (partes.length !== 3) return fechaStr
+  const [y, m, d] = partes.map(Number)
+  const fecha = new Date(y, m - 1, d)
+  return fecha.toLocaleDateString('es-ES', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+}
+
 // ─── Página Principal ─────────────────────────────────────────────────────────
 export default function CajaPage() {
   const { session } = useAuth()
@@ -175,6 +198,11 @@ export default function CajaPage() {
   const [showModal, setShowModal] = useState(false)
   const [registroDetalle, setRegistroDetalle] = useState(null)
 
+  // Filtro por fecha (por defecto hoy)
+  const [fechaFiltro, setFechaFiltro] = useState(getHoyISO())
+
+  const esHoy = fechaFiltro === getHoyISO()
+
   // Hora actual en tiempo real
   const [horaActual, setHoraActual] = useState(new Date())
   useEffect(() => {
@@ -182,22 +210,26 @@ export default function CajaPage() {
     return () => clearInterval(timer)
   }, [])
 
-  const fetchHistorial = useCallback(async () => {
+  const fetchHistorial = useCallback(async (fecha = fechaFiltro) => {
     try {
       setLoadingHistorial(true)
-      const { data } = await monitoringApi.get('/api/caja/historial')
-      if (data.registros) setHistorial(data.registros)
-      if (data.resumen) setResumen(data.resumen)
+      const res = await monitoringApi.get('/api/caja/historial', {
+        params: { fecha }
+      })
+      if (res.data) {
+        setHistorial(res.data.registros || [])
+        setResumen(res.data.resumen || null)
+      }
     } catch {
-      setNotification({ type: 'error', msg: 'No se pudo cargar el historial de la jornada' })
+      setNotification({ type: 'error', msg: 'No se pudo cargar el historial de la fecha seleccionada' })
     } finally {
       setLoadingHistorial(false)
     }
-  }, [])
+  }, [fechaFiltro])
 
   useEffect(() => {
-    fetchHistorial()
-  }, [fetchHistorial])
+    fetchHistorial(fechaFiltro)
+  }, [fechaFiltro, fetchHistorial])
 
   const totalPersonas = tarifa15 + tarifa20
   const totalRecaudado = tarifa15 * 15 + tarifa20 * 20
@@ -222,7 +254,14 @@ export default function CajaPage() {
       setTarifa20(0)
       setObservaciones('')
       setShowModal(false)
-      fetchHistorial()
+
+      // Si estaba en otra fecha, volver a hoy para visualizar la venta realizada
+      const hoy = getHoyISO()
+      if (fechaFiltro !== hoy) {
+        setFechaFiltro(hoy)
+      } else {
+        fetchHistorial(hoy)
+      }
     } catch (err) {
       const msg = err.response?.data?.detail || 'Error al registrar entrada'
       setNotification({ type: 'error', msg: `✗ ${msg}` })
@@ -240,7 +279,7 @@ export default function CajaPage() {
           <div>
             <p className="text-xs font-bold tracking-widest uppercase text-blue-500 mb-1">Módulo de Caja</p>
             <h1 className="text-2xl font-bold text-slate-800">Control de Ingresos y Aforo</h1>
-            <p className="text-sm text-slate-500 mt-0.5">Registro de taquilla e historial diario</p>
+            <p className="text-sm text-slate-500 mt-0.5">Registro de taquilla y cobro de entradas</p>
           </div>
 
           <div className="flex items-center gap-4">
@@ -268,35 +307,120 @@ export default function CajaPage() {
         </div>
       )}
 
-      {/* ── Resumen superior de Caja ── */}
-      <div className="max-w-6xl mx-auto px-6 mt-6 grid grid-cols-1 md:grid-cols-4 gap-5">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Total Personas Hoy</p>
-          <h3 className="text-3xl font-black text-slate-800 mt-2">{resumen?.total_personas ?? 0}</h3>
-        </div>
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-blue-500">Tarifa 15 Bs</p>
-          <h3 className="text-3xl font-black text-blue-600 mt-2">{resumen?.total_tarifa_15 ?? 0} <span className="text-sm font-semibold text-slate-400">pers.</span></h3>
-        </div>
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-emerald-500">Tarifa 20 Bs</p>
-          <h3 className="text-3xl font-black text-emerald-600 mt-2">{resumen?.total_tarifa_20 ?? 0} <span className="text-sm font-semibold text-slate-400">pers.</span></h3>
-        </div>
-        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-5 rounded-2xl shadow-md">
-          <p className="text-xs font-bold uppercase tracking-wider opacity-80">Total Recaudado</p>
-          <h3 className="text-3xl font-black mt-2">Bs. {parseFloat(resumen?.total_recaudado ?? 0).toFixed(2)}</h3>
+      {/* ── Barra de Filtro por Fecha (Por defecto HOY) ── */}
+      <div className="max-w-6xl mx-auto px-6 mt-6">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <label htmlFor="fechaFiltroCaja" className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Filtrar por fecha:
+              </label>
+              <input
+                id="fechaFiltroCaja"
+                type="date"
+                value={fechaFiltro}
+                onChange={(e) => {
+                  if (e.target.value) setFechaFiltro(e.target.value)
+                }}
+                className="px-3.5 py-2 rounded-xl border border-slate-300 font-bold text-sm text-slate-800 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
+              />
+            </div>
+
+            {!esHoy && (
+              <button
+                type="button"
+                onClick={() => setFechaFiltro(getHoyISO())}
+                className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-black transition-all border border-blue-200 active:scale-95 flex items-center gap-1.5"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Volver a Hoy
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-slate-600 capitalize">
+              {formatearFechaLegible(fechaFiltro)}
+            </span>
+            {esHoy ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Hoy
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                Historial Pasado
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ── Tabla Principal de Registros del Día ── */}
+      {/* ── Resumen de Caja (4 tarjetas limpias para Taquilla) ── */}
+      <div className="max-w-6xl mx-auto px-6 mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            {esHoy ? 'Total Taquilla Hoy' : 'Total Bañistas'}
+          </p>
+          <h3 className="text-3xl font-black text-slate-800 mt-2">
+            {resumen?.total_personas ?? 0} <span className="text-sm font-semibold text-slate-400">pers.</span>
+          </h3>
+        </div>
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wider text-blue-500">Tarifa 15 Bs</p>
+          <h3 className="text-3xl font-black text-blue-600 mt-2">
+            {resumen?.total_tarifa_15 ?? 0} <span className="text-sm font-semibold text-slate-400">pers.</span>
+          </h3>
+        </div>
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wider text-emerald-500">Tarifa 20 Bs</p>
+          <h3 className="text-3xl font-black text-emerald-600 mt-2">
+            {resumen?.total_tarifa_20 ?? 0} <span className="text-sm font-semibold text-slate-400">pers.</span>
+          </h3>
+        </div>
+        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-5 rounded-2xl shadow-md">
+          <p className="text-xs font-bold uppercase tracking-wider opacity-80">Total Recaudado</p>
+          <h3 className="text-3xl font-black mt-2">
+            Bs. {parseFloat(resumen?.total_recaudado ?? 0).toFixed(2)}
+          </h3>
+        </div>
+      </div>
+
+      {/* ── Tabla Principal de Registros de Taquilla ── */}
       <div className="max-w-6xl mx-auto px-6 mt-8">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
-              <h2 className="font-bold text-lg text-slate-800">Registros de Ingreso del Día</h2>
+          
+          {/* Header de la Tabla */}
+          <div className="flex flex-wrap items-center justify-between px-6 py-4 border-b border-slate-100 gap-3">
+            <div className="flex items-center gap-3">
+              <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <span>👥 Registros de Taquilla</span>
+              </h2>
+              <span className="rounded-full bg-blue-50 text-blue-700 border border-blue-100 px-3 py-0.5 text-xs font-bold">
+                {historial.length} {historial.length === 1 ? 'registro' : 'registros'}
+              </span>
             </div>
-            <span className="text-sm font-semibold text-slate-400">{historial.length} registro(s)</span>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => fetchHistorial(fechaFiltro)}
+                className="text-xs font-bold text-slate-600 hover:text-blue-600 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-all active:scale-95"
+                title="Actualizar datos"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Actualizar
+              </button>
+              <span className="text-xs font-semibold text-slate-400">
+                {esHoy ? 'Jornada de Hoy' : `Fecha: ${fechaFiltro}`}
+              </span>
+            </div>
           </div>
 
           {loadingHistorial ? (
@@ -311,8 +435,14 @@ export default function CajaPage() {
               <div className="flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 mx-auto mb-4 text-slate-400">
                 <IconTicket />
               </div>
-              <p className="text-slate-700 font-bold">Sin registros de taquilla en esta jornada</p>
-              <p className="text-slate-400 text-sm mt-1">Haz clic en &quot;+ Registrar Ingreso&quot; para añadir bañistas</p>
+              <p className="text-slate-700 font-bold">
+                {esHoy ? 'Sin registros de taquilla en esta jornada' : `Sin registros de taquilla para el ${fechaFiltro}`}
+              </p>
+              <p className="text-slate-400 text-sm mt-1">
+                {esHoy
+                  ? 'Haz clic en "+ Registrar Ingreso" para añadir bañistas'
+                  : 'Selecciona otra fecha en el filtro superior o presiona "Volver a Hoy"'}
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">

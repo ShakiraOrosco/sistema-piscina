@@ -24,3 +24,19 @@ def test_lecturas_accepts_legacy_ntu_field():
         json={"ph": 7.2, "ntu": 4.1, "temperatura": 28.0},
     )
     assert response.status_code in {200, 500}
+
+
+def test_aforo_camara_historial():
+    response = client.get("/api/aforo-camara/historial")
+    assert response.status_code == 200
+    data = response.json()
+    assert "registros" in data
+    assert "resumen" in data
+
+
+def test_aforo_manual_historial():
+    response = client.get("/api/aforo-manual/historial")
+    assert response.status_code == 200
+    data = response.json()
+    assert "registros" in data
+    assert "resumen" in data

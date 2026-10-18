@@ -1,4 +1,7 @@
 import os
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 import joblib
 import numpy as np
 import pandas as pd
@@ -127,6 +130,70 @@ def evaluar_y_comparar():
     plt.savefig(chart_path)
     plt.close()
     print(f"--> Gráfico de evaluación guardado en: {chart_path}")
+
+    # --- MÉTRICAS DETALLADAS POR QUÍMICO ---
+    nombres_quimicos = ["Sulfato de Aluminio", "Sulfato de Cobre", "Cloro"]
+    col_labels = ["aluminio_g (g)", "cobre_g (g)", "cloro_g (g)"]
+    print("\n" + "="*95)
+    print("      MÉTRICAS DE FIABILIDAD POR QUÍMICO (LSTM - CONJUNTO DE PRUEBA)")
+    print("="*95)
+    print(f"{'Químico':<22} | {'RMSE (g)':<10} | {'MAE (g)':<10} | {'Error % (MAPE)':<16} | {'Fiabilidad (%)':<16} | {'R² (%)':<10}")
+    print("-" * 95)
+    mapes = []
+    for idx, nombre in enumerate(nombres_quimicos):
+        q_rmse, q_mae, q_r2 = calcular_metricas(y_te_l[:, idx], pred_te_l[:, idx])
+        q_mape = np.mean(np.abs((y_te_l[:, idx] - pred_te_l[:, idx]) / np.maximum(y_te_l[:, idx], 1e-5))) * 100.0
+        q_fiab = 100.0 - q_mape
+        mapes.append(q_mape)
+        print(f"{nombre:<22} | {q_rmse:<10.2f} | {q_mae:<10.2f} | {q_mape:<15.2f}% | {q_fiab:<15.2f}% | {q_r2*100:<9.1f}%")
+    print("="*95)
+    print(f"--> Fiabilidad Operativa Promedio Global (100 - MAPE): {100.0 - np.mean(mapes):.2f}%")
+    print(f"--> Coeficiente de Fiabilidad Explicativa (R² Global): {r2_te_l*100:.1f}%\n")
+
+    # --- GRÁFICO PREDICCIÓN VS REAL POR QUÍMICO (TIPO SERIE TEMPORAL) ---
+    graficar_predicciones_quimicos(y_te_l, pred_te_l, n_jornadas=60)
+
+
+def graficar_predicciones_quimicos(y_true, y_pred, n_jornadas=60, filename="prediccion_vs_real_quimicos.png"):
+    """
+    Genera el gráfico comparativo de dosis real vs. predicha para cada químico:
+      1) aluminio_g (g)
+      2) cobre_g (g)
+      3) cloro_g (g)
+    en una serie temporal de N jornadas, idéntico al formato de presentación.
+    """
+    n_puntos = min(n_jornadas, len(y_true))
+    x = np.arange(n_puntos)
+
+    quimicos_info = [
+        {"nombre": "aluminio_g (g)", "idx": 0, "legend_loc": "lower right"},
+        {"nombre": "cobre_g (g)", "idx": 1, "legend_loc": "upper left"},
+        {"nombre": "cloro_g (g)", "idx": 2, "legend_loc": "upper right"},
+    ]
+
+    fig, axes = plt.subplots(3, 1, figsize=(11, 7.5), sharex=True)
+    fig.suptitle("Predicción de dosis al cierre vs. dosis real aplicada", fontsize=11, y=0.98)
+
+    for i, q in enumerate(quimicos_info):
+        ax = axes[i]
+        real_vals = y_true[:n_puntos, q["idx"]]
+        pred_vals = y_pred[:n_puntos, q["idx"]]
+
+        ax.plot(x, real_vals, color="#1f77b4", label="real", linewidth=1.4)
+        ax.plot(x, pred_vals, color="#ff7f0e", linestyle="--", label="predicción", linewidth=1.4)
+        ax.set_ylabel(q["nombre"], fontsize=9)
+        ax.legend(loc=q["legend_loc"], fontsize=8, framealpha=0.9)
+        ax.tick_params(labelsize=8.5)
+
+    axes[-1].set_xlabel("Jornada", fontsize=9)
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.94, hspace=0.15)
+    
+    out_path = os.path.join(REPORTS_DIR, filename)
+    plt.savefig(out_path, dpi=300)
+    plt.close()
+    print(f"--> Gráfico de dosis real vs predicción guardado en: {out_path}")
+
 
 if __name__ == "__main__":
     evaluar_y_comparar()

@@ -264,7 +264,7 @@ def predecir_cierre_dia(
 
     aluminio_g = float(np.clip(round(pred_real[0]), 0, 1000))
     cobre_g = float(np.clip(round(pred_real[1]), 0, 1000))
-    cloro_g = float(np.clip(round(pred_real[2]), 0, 200))
+    cloro_g = float(np.clip(round(pred_real[2]), 0, 100))
 
     capturadas = sum(1 for f in franjas if f["capturada"])
 

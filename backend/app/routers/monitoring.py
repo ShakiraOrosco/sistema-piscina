@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
 
@@ -177,6 +177,208 @@ async def registrar_aforo_camara(payload: Dict[str, Any]):
     except Exception as exc:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        conn.close()
+
+
+@router.get("/api/v1/aforo-camara/historial")
+@router.get("/api/aforo-camara/historial")
+async def historial_aforo_camara():
+    """Devuelve el historial de registros detectados por la cámara inteligente para la jornada de hoy."""
+    conn = get_connection()
+    if conn is None:
+        raise HTTPException(status_code=500, detail="No se pudo conectar a la base de datos")
+
+    try:
+        cur = get_dict_cursor(conn)
+        fecha_hoy = date.today()
+        cur.execute(
+            "SELECT id_jornada FROM jornada WHERE fecha = %s ORDER BY id_jornada DESC LIMIT 1",
+            (fecha_hoy,)
+        )
+        jornada_row = cur.fetchone()
+        if not jornada_row:
+            return {
+                "jornada_activa": False,
+                "registros": [],
+                "resumen": {
+                    "ultimo_conteo": 0,
+                    "pico_personas": 0,
+                    "promedio_personas": 0.0,
+                    "total_registros": 0,
+                },
+            }
+
+        id_jornada = jornada_row["id_jornada"]
+
+        cur.execute(
+            """
+            SELECT id_registro, fecha_hora, cantidad_personas, id_dispositivo, creado_en
+            FROM aforo_camara
+            WHERE id_jornada = %s
+            ORDER BY fecha_hora DESC
+            """,
+            (id_jornada,),
+        )
+        registros = [serializar_dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            """
+            SELECT
+                COALESCE(MAX(cantidad_personas), 0)                      AS pico_personas,
+                COALESCE(ROUND(AVG(cantidad_personas)::numeric, 1), 0.0) AS promedio_personas,
+                COUNT(*)                                                 AS total_registros
+            FROM aforo_camara
+            WHERE id_jornada = %s
+            """,
+            (id_jornada,),
+        )
+        cam_stats = cur.fetchone() or {}
+
+        ultimo_conteo = registros[0]["cantidad_personas"] if registros else 0
+
+        resumen = {
+            "ultimo_conteo": ultimo_conteo,
+            "pico_personas": int(cam_stats.get("pico_personas") or 0),
+            "promedio_personas": float(cam_stats.get("promedio_personas") or 0.0),
+            "total_registros": int(cam_stats.get("total_registros") or 0),
+        }
+
+        return {
+            "jornada_activa": True,
+            "id_jornada": id_jornada,
+            "fecha": fecha_hoy.isoformat(),
+            "resumen": resumen,
+            "registros": registros,
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/api/v1/aforo-manual/historial")
+@router.get("/api/aforo-manual/historial")
+async def historial_aforo_manual(fecha: Optional[str] = None):
+    """Devuelve el historial de ingresos manuales (taquilla) para la jornada seleccionada (o la de hoy)."""
+    conn = get_connection()
+    if conn is None:
+        raise HTTPException(status_code=500, detail="No se pudo conectar a la base de datos")
+
+    try:
+        cur = get_dict_cursor(conn)
+        if fecha:
+            try:
+                fecha_obj = datetime.strptime(fecha.strip(), "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Formato de fecha inválido. Use YYYY-MM-DD")
+        else:
+            fecha_obj = date.today()
+
+        cur.execute(
+            "SELECT id_jornada FROM jornada WHERE fecha = %s ORDER BY id_jornada DESC LIMIT 1",
+            (fecha_obj,)
+        )
+        jornada_row = cur.fetchone()
+
+        if jornada_row:
+            id_jornada = jornada_row["id_jornada"]
+
+            cur.execute(
+                """
+                SELECT
+                    id_registro,
+                    hora_entrada,
+                    cantidad_tarifa_15,
+                    cantidad_tarifa_20,
+                    total_personas,
+                    total_recaudado,
+                    observaciones,
+                    creado_en
+                FROM aforo_manual
+                WHERE id_jornada = %s
+                ORDER BY hora_entrada DESC
+                """,
+                (id_jornada,),
+            )
+            registros = [serializar_dict(r) for r in cur.fetchall()]
+
+            cur.execute(
+                """
+                SELECT
+                    COALESCE(SUM(total_personas), 0)     AS total_personas,
+                    COALESCE(SUM(cantidad_tarifa_15), 0) AS total_tarifa_15,
+                    COALESCE(SUM(cantidad_tarifa_20), 0) AS total_tarifa_20,
+                    COALESCE(SUM(total_recaudado), 0)    AS total_recaudado,
+                    COUNT(*)                             AS cantidad_registros
+                FROM aforo_manual
+                WHERE id_jornada = %s
+                """,
+                (id_jornada,),
+            )
+            resumen_row = cur.fetchone()
+
+            return {
+                "jornada_activa": True,
+                "id_jornada": id_jornada,
+                "fecha": fecha_obj.isoformat(),
+                "registros": registros,
+                "resumen": serializar_dict(resumen_row),
+            }
+
+        # Fallback a fecha de hora_entrada si no existe jornada registrada
+        cur.execute(
+            """
+            SELECT
+                id_registro,
+                hora_entrada,
+                cantidad_tarifa_15,
+                cantidad_tarifa_20,
+                total_personas,
+                total_recaudado,
+                observaciones,
+                creado_en
+            FROM aforo_manual
+            WHERE DATE(hora_entrada) = %s
+            ORDER BY hora_entrada DESC
+            """,
+            (fecha_obj,),
+        )
+        registros_directos = [serializar_dict(r) for r in cur.fetchall()]
+        if registros_directos:
+            cur.execute(
+                """
+                SELECT
+                    COALESCE(SUM(total_personas), 0)     AS total_personas,
+                    COALESCE(SUM(cantidad_tarifa_15), 0) AS total_tarifa_15,
+                    COALESCE(SUM(cantidad_tarifa_20), 0) AS total_tarifa_20,
+                    COALESCE(SUM(total_recaudado), 0)    AS total_recaudado,
+                    COUNT(*)                             AS cantidad_registros
+                FROM aforo_manual
+                WHERE DATE(hora_entrada) = %s
+                """,
+                (fecha_obj,),
+            )
+            resumen_directo = cur.fetchone()
+            return {
+                "jornada_activa": False,
+                "id_jornada": None,
+                "fecha": fecha_obj.isoformat(),
+                "registros": registros_directos,
+                "resumen": serializar_dict(resumen_directo),
+            }
+
+        return {
+            "jornada_activa": False,
+            "id_jornada": None,
+            "fecha": fecha_obj.isoformat(),
+            "registros": [],
+            "resumen": {
+                "total_personas": 0,
+                "total_tarifa_15": 0,
+                "total_tarifa_20": 0,
+                "total_recaudado": 0.0,
+                "cantidad_registros": 0,
+            },
+        }
     finally:
         conn.close()
 
@@ -358,6 +560,66 @@ async def estado_actual():
         aforo_manual = int(personas_manual_row["personas"]) if personas_manual_row else 0
         aforo_camara = int(personas_camara_row["cantidad_personas"]) if personas_camara_row else 0
 
+        # Historial y resumen detallado de Aforo Manual (Taquilla) de hoy
+        cur.execute(
+            """
+            SELECT id_registro, hora_entrada, cantidad_tarifa_15, cantidad_tarifa_20,
+                   total_personas, total_recaudado, observaciones, creado_en
+            FROM aforo_manual
+            WHERE id_jornada = %s
+            ORDER BY hora_entrada DESC
+            """,
+            (id_jornada,),
+        )
+        aforo_manual_registros = [serializar_dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            """
+            SELECT
+                COALESCE(SUM(total_personas), 0)     AS total_personas,
+                COALESCE(SUM(cantidad_tarifa_15), 0) AS total_tarifa_15,
+                COALESCE(SUM(cantidad_tarifa_20), 0) AS total_tarifa_20,
+                COALESCE(SUM(total_recaudado), 0)    AS total_recaudado,
+                COUNT(*)                             AS cantidad_registros
+            FROM aforo_manual
+            WHERE id_jornada = %s
+            """,
+            (id_jornada,),
+        )
+        man_resumen_row = cur.fetchone()
+        aforo_manual_resumen = serializar_dict(man_resumen_row) or {}
+
+        # Historial y resumen detallado de Aforo Cámara Inteligente de hoy
+        cur.execute(
+            """
+            SELECT id_registro, fecha_hora, cantidad_personas, id_dispositivo, creado_en
+            FROM aforo_camara
+            WHERE id_jornada = %s
+            ORDER BY fecha_hora DESC
+            """,
+            (id_jornada,),
+        )
+        aforo_camara_registros = [serializar_dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            """
+            SELECT
+                COALESCE(MAX(cantidad_personas), 0)                      AS pico_personas,
+                COALESCE(ROUND(AVG(cantidad_personas)::numeric, 1), 0.0) AS promedio_personas,
+                COUNT(*)                                                 AS total_registros
+            FROM aforo_camara
+            WHERE id_jornada = %s
+            """,
+            (id_jornada,),
+        )
+        cam_stats = cur.fetchone() or {}
+        aforo_camara_resumen = {
+            "ultimo_conteo": aforo_camara,
+            "pico_personas": int(cam_stats.get("pico_personas") or 0),
+            "promedio_personas": float(cam_stats.get("promedio_personas") or 0.0),
+            "total_registros": int(cam_stats.get("total_registros") or 0),
+        }
+
         return {
             "id_jornada": id_jornada,
             "fecha": date.today().isoformat(),
@@ -365,6 +627,10 @@ async def estado_actual():
             "aforo_manual": aforo_manual,
             "aforo_camara": aforo_camara,
             "personas_hoy": aforo_manual,
+            "aforo_manual_registros": aforo_manual_registros,
+            "aforo_manual_resumen": aforo_manual_resumen,
+            "aforo_camara_registros": aforo_camara_registros,
+            "aforo_camara_resumen": aforo_camara_resumen,
             "resumen": serializar_dict(resumen_row),
             "prediccion": serializar_dict(pred),
             "dosis_aplicadas": dosis_aplicadas,
