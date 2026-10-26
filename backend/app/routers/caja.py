@@ -93,10 +93,10 @@ async def registrar_entrada(payload: RegistroEntradaPayload):
 
 
 @router.get("/historial")
-async def obtener_historial():
+async def obtener_historial(fecha: Optional[str] = None):
     """
-    Devuelve todos los registros de entrada de la jornada de hoy,
-    junto con un resumen del total de personas y dinero recaudado.
+    Devuelve todos los registros de entrada de la jornada para la fecha seleccionada
+    (por defecto la de hoy), junto con un resumen del total de personas y dinero recaudado.
     """
     conn = get_connection()
     if conn is None:
@@ -105,28 +105,66 @@ async def obtener_historial():
     try:
         cur = get_dict_cursor(conn)
 
-        fecha_hoy = date.today()
+        if fecha:
+            try:
+                fecha_obj = datetime.strptime(fecha.strip(), "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Formato de fecha inválido. Use YYYY-MM-DD")
+        else:
+            fecha_obj = date.today()
+
         cur.execute(
             "SELECT id_jornada FROM jornada WHERE fecha = %s ORDER BY id_jornada DESC LIMIT 1",
-            (fecha_hoy,)
+            (fecha_obj,)
         )
         jornada_row = cur.fetchone()
 
-        if not jornada_row:
+        if jornada_row:
+            id_jornada = jornada_row["id_jornada"]
+
+            cur.execute(
+                """
+                SELECT
+                    id_registro,
+                    hora_entrada,
+                    cantidad_tarifa_15,
+                    cantidad_tarifa_20,
+                    total_personas,
+                    total_recaudado,
+                    observaciones,
+                    creado_en
+                FROM aforo_manual
+                WHERE id_jornada = %s
+                ORDER BY hora_entrada DESC
+                """,
+                (id_jornada,),
+            )
+            registros = [serializar_dict(r) for r in cur.fetchall()]
+
+            cur.execute(
+                """
+                SELECT
+                    COALESCE(SUM(total_personas), 0)     AS total_personas,
+                    COALESCE(SUM(cantidad_tarifa_15), 0) AS total_tarifa_15,
+                    COALESCE(SUM(cantidad_tarifa_20), 0) AS total_tarifa_20,
+                    COALESCE(SUM(total_recaudado), 0)    AS total_recaudado,
+                    COUNT(*)                             AS cantidad_registros
+                FROM aforo_manual
+                WHERE id_jornada = %s
+                """,
+                (id_jornada,),
+            )
+            resumen_row = cur.fetchone()
+
             return {
-                "jornada_activa": False,
-                "registros": [],
-                "resumen": {
-                    "total_personas": 0,
-                    "total_tarifa_15": 0,
-                    "total_tarifa_20": 0,
-                    "total_recaudado": 0.0,
-                    "cantidad_registros": 0,
-                },
+                "jornada_activa": True,
+                "id_jornada": id_jornada,
+                "fecha": fecha_obj.isoformat(),
+                "registros": registros,
+                "resumen": serializar_dict(resumen_row),
             }
 
-        id_jornada = jornada_row["id_jornada"]
-
+        # Si no hay fila en jornada con esa fecha, verificar directamente en aforo_manual por hora_entrada
         cur.execute(
             """
             SELECT
@@ -139,34 +177,48 @@ async def obtener_historial():
                 observaciones,
                 creado_en
             FROM aforo_manual
-            WHERE id_jornada = %s
+            WHERE DATE(hora_entrada) = %s
             ORDER BY hora_entrada DESC
             """,
-            (id_jornada,),
+            (fecha_obj,),
         )
-        registros = [serializar_dict(r) for r in cur.fetchall()]
+        registros_directos = [serializar_dict(r) for r in cur.fetchall()]
 
-        cur.execute(
-            """
-            SELECT
-                COALESCE(SUM(total_personas), 0)     AS total_personas,
-                COALESCE(SUM(cantidad_tarifa_15), 0) AS total_tarifa_15,
-                COALESCE(SUM(cantidad_tarifa_20), 0) AS total_tarifa_20,
-                COALESCE(SUM(total_recaudado), 0)    AS total_recaudado,
-                COUNT(*)                             AS cantidad_registros
-            FROM aforo_manual
-            WHERE id_jornada = %s
-            """,
-            (id_jornada,),
-        )
-        resumen_row = cur.fetchone()
+        if registros_directos:
+            cur.execute(
+                """
+                SELECT
+                    COALESCE(SUM(total_personas), 0)     AS total_personas,
+                    COALESCE(SUM(cantidad_tarifa_15), 0) AS total_tarifa_15,
+                    COALESCE(SUM(cantidad_tarifa_20), 0) AS total_tarifa_20,
+                    COALESCE(SUM(total_recaudado), 0)    AS total_recaudado,
+                    COUNT(*)                             AS cantidad_registros
+                FROM aforo_manual
+                WHERE DATE(hora_entrada) = %s
+                """,
+                (fecha_obj,),
+            )
+            resumen_directo = cur.fetchone()
+            return {
+                "jornada_activa": False,
+                "id_jornada": None,
+                "fecha": fecha_obj.isoformat(),
+                "registros": registros_directos,
+                "resumen": serializar_dict(resumen_directo),
+            }
 
         return {
-            "jornada_activa": True,
-            "id_jornada": id_jornada,
-            "fecha": date.today().isoformat(),
-            "registros": registros,
-            "resumen": serializar_dict(resumen_row),
+            "jornada_activa": False,
+            "id_jornada": None,
+            "fecha": fecha_obj.isoformat(),
+            "registros": [],
+            "resumen": {
+                "total_personas": 0,
+                "total_tarifa_15": 0,
+                "total_tarifa_20": 0,
+                "total_recaudado": 0.0,
+                "cantidad_registros": 0,
+            },
         }
 
     finally:

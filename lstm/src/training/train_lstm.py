@@ -25,7 +25,7 @@ class LSTMRegressor(nn.Module):
     Entrada: (Batch, Seq_len=3, Features=4)
     Salida: (Batch, Targets=3) -> [aluminio_g, cobre_g, cloro_g]
     """
-    def __init__(self, input_dim=4, hidden_dim=64, num_layers=2, output_dim=3, dropout=0.2):
+    def __init__(self, input_dim=4, hidden_dim=64, num_layers=2, output_dim=3, dropout=0.25):
         super(LSTMRegressor, self).__init__()
         self.lstm = nn.LSTM(
             input_size=input_dim,
@@ -68,10 +68,10 @@ def entrenar_modelo_lstm():
     train_dataset = TensorDataset(X_tr_t, y_tr_t)
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
     
-    # Instanciar Modelo, Criterio y Optimizador
-    model = LSTMRegressor(input_dim=4, hidden_dim=64, num_layers=2, output_dim=3, dropout=0.2)
+    # Instanciar Modelo, Criterio y Optimizador con L2 Regularization (Anti-overfitting)
+    model = LSTMRegressor(input_dim=4, hidden_dim=64, num_layers=2, output_dim=3, dropout=0.25)
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
     
     best_val_loss = float('inf')
     epochs = 100
@@ -80,29 +80,43 @@ def entrenar_modelo_lstm():
     
     train_losses = []
     val_losses = []
+    train_losses_chem = [[] for _ in range(3)]
+    val_losses_chem = [[] for _ in range(3)]
     
     model_save_path = os.path.join(MODELS_DIR, "lstm_piscina_model.pth")
     
     for epoch in range(1, epochs + 1):
         model.train()
         running_loss = 0.0
+        running_chem = [0.0, 0.0, 0.0]
+
         for batch_x, batch_y in train_loader:
             optimizer.zero_grad()
             outputs = model(batch_x)
             loss = criterion(outputs, batch_y)
             loss.backward()
             optimizer.step()
-            running_loss += loss.item() * batch_x.size(0)
+
+            batch_count = batch_x.size(0)
+            running_loss += loss.item() * batch_count
+            for c in range(3):
+                chem_loss = criterion(outputs[:, c], batch_y[:, c]).item()
+                running_chem[c] += chem_loss * batch_count
             
         epoch_train_loss = running_loss / len(X_tr_t)
+        train_losses.append(epoch_train_loss)
+        for c in range(3):
+            train_losses_chem[c].append(running_chem[c] / len(X_tr_t))
         
         # Evaluación en validación
         model.eval()
         with torch.no_grad():
             val_outputs = model(X_val_t)
             epoch_val_loss = criterion(val_outputs, y_val_t).item()
+            for c in range(3):
+                c_val = criterion(val_outputs[:, c], y_val_t[:, c]).item()
+                val_losses_chem[c].append(c_val)
             
-        train_losses.append(epoch_train_loss)
         val_losses.append(epoch_val_loss)
         
         if epoch % 10 == 0 or epoch == 1:
@@ -124,7 +138,7 @@ def entrenar_modelo_lstm():
     joblib.dump(scaler_y, os.path.join(MODELS_DIR, "scaler_y.joblib"))
     print("--> Modelo LSTM y escaladores guardados exitosamente en:", MODELS_DIR)
     
-    # Gráfica de curva de aprendizaje
+    # 1. Gráfica de curva de aprendizaje general
     plt.figure(figsize=(8, 4))
     plt.plot(train_losses, label='Pérdida Entrenamiento (Train MSE)')
     plt.plot(val_losses, label='Pérdida Validación (Val MSE)')
@@ -135,8 +149,80 @@ def entrenar_modelo_lstm():
     plt.grid(True)
     plt.savefig(os.path.join(REPORTS_DIR, "curva_aprendizaje_lstm.png"))
     plt.close()
+
+    # 2. Gráfica de curvas de aprendizaje individual por químico
+    fig, axes = plt.subplots(3, 1, figsize=(9, 8), sharex=True)
+    fig.suptitle('Curvas de Aprendizaje por Químico - Modelo LSTM', fontsize=11, y=0.98)
+    nombres_chem = ['Sulfato de Aluminio', 'Sulfato de Cobre', 'Cloro']
+    colores_chem = ['#1f77b4', '#2ca02c', '#d62728']
+    for i in range(3):
+        axes[i].plot(train_losses_chem[i], label='Train MSE', color=colores_chem[i], linewidth=1.5)
+        axes[i].plot(val_losses_chem[i], label='Val MSE', color='#e65100', linestyle='--', linewidth=1.5)
+        axes[i].set_ylabel(f'MSE ({nombres_chem[i]})', fontsize=9)
+        axes[i].legend(loc='upper right', fontsize=8)
+        axes[i].grid(True, linestyle=':', alpha=0.6)
+        axes[i].tick_params(labelsize=8.5)
+    axes[-1].set_xlabel('Época', fontsize=9)
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.93, hspace=0.18)
+    curva_chem_path = os.path.join(REPORTS_DIR, "curva_aprendizaje_por_quimico.png")
+    plt.savefig(curva_chem_path, dpi=300)
+    plt.close()
+    print(f"--> Curva de aprendizaje por químico guardada en: {curva_chem_path}")
+
+    # 3. Gráfica de predicción vs real de los químicos (60 jornadas)
+    model.load_state_dict(torch.load(model_save_path))
+    model.eval()
+    with torch.no_grad():
+        X_te_t = torch.tensor(X_te, dtype=torch.float32)
+        pred_te_scaled = model(X_te_t).numpy()
+    pred_te = scaler_y.inverse_transform(pred_te_scaled)
+    y_te_orig = scaler_y.inverse_transform(y_te)
+    graficar_prediccion_dosis_quimicos(y_te_orig, pred_te, n_jornadas=60)
     
     return model, scaler_X, scaler_y
+
+
+def graficar_prediccion_dosis_quimicos(y_true, y_pred, n_jornadas=60, filename="prediccion_vs_real_quimicos.png"):
+    """
+    Genera el gráfico comparativo de dosis real vs. predicha para cada químico:
+      - aluminio_g (g)
+      - cobre_g (g)
+      - cloro_g (g)
+    en una serie temporal de N jornadas, idéntico al formato solicitado.
+    """
+    n_puntos = min(n_jornadas, len(y_true))
+    x = np.arange(n_puntos)
+
+    quimicos_info = [
+        {"nombre": "aluminio_g (g)", "idx": 0, "legend_loc": "lower right"},
+        {"nombre": "cobre_g (g)", "idx": 1, "legend_loc": "upper left"},
+        {"nombre": "cloro_g (g)", "idx": 2, "legend_loc": "upper right"},
+    ]
+
+    fig, axes = plt.subplots(3, 1, figsize=(11, 7.5), sharex=True)
+    fig.suptitle("Predicción de dosis al cierre vs. dosis real aplicada", fontsize=11, y=0.98)
+
+    for i, q in enumerate(quimicos_info):
+        ax = axes[i]
+        real_vals = y_true[:n_puntos, q["idx"]]
+        pred_vals = y_pred[:n_puntos, q["idx"]]
+
+        ax.plot(x, real_vals, color="#1f77b4", label="real", linewidth=1.4)
+        ax.plot(x, pred_vals, color="#ff7f0e", linestyle="--", label="predicción", linewidth=1.4)
+        ax.set_ylabel(q["nombre"], fontsize=9)
+        ax.legend(loc=q["legend_loc"], fontsize=8, framealpha=0.9)
+        ax.tick_params(labelsize=8.5)
+
+    axes[-1].set_xlabel("Jornada", fontsize=9)
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.94, hspace=0.15)
+    
+    out_path = os.path.join(REPORTS_DIR, filename)
+    plt.savefig(out_path, dpi=300)
+    plt.close()
+    print(f"--> Gráfico de dosis real vs predicción guardado en: {out_path}")
+
 
 if __name__ == "__main__":
     entrenar_modelo_lstm()

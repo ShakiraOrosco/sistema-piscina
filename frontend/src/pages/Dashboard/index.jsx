@@ -94,10 +94,37 @@ export default function Dashboard() {
   }))
 
   const [currentPage, setCurrentPage] = useState(1)
+  const [modalAforo, setModalAforo] = useState(null) // 'manual' | 'camara' | null
+  const [modalPage, setModalPage] = useState(1)
+  const [tableTab, setTableTab] = useState('sensores') // 'sensores' | 'manual' | 'camara'
   const itemsPerPage = 10
 
-  const totalPages = Math.ceil(sortedReadings.length / itemsPerPage) || 1
-  const paginatedReadings = sortedReadings.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+  const rawManualReadings = sensorData?.aforo_manual_registros || []
+  const manualSummary = sensorData?.aforo_manual_resumen || {}
+  const rawCameraReadings = sensorData?.aforo_camara_registros || []
+  const cameraSummary = sensorData?.aforo_camara_resumen || {}
+
+  // Ordenar de más reciente a más antigua
+  const sortedManualReadings = [...rawManualReadings].sort(
+    (a, b) => new Date(b.hora_entrada || b.creado_en) - new Date(a.hora_entrada || a.creado_en)
+  )
+  const sortedCameraReadings = [...rawCameraReadings].sort(
+    (a, b) => new Date(b.fecha_hora || b.creado_en) - new Date(a.fecha_hora || a.creado_en)
+  )
+
+  // Datos para la tabla del dashboard según tab activo
+  const currentTableList =
+    tableTab === 'manual' ? sortedManualReadings :
+    tableTab === 'camara' ? sortedCameraReadings :
+    sortedReadings
+
+  const totalPages = Math.ceil(currentTableList.length / itemsPerPage) || 1
+  const paginatedList = currentTableList.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+
+  // Datos para el modal según aforo seleccionado
+  const modalList = modalAforo === 'manual' ? sortedManualReadings : sortedCameraReadings
+  const modalTotalPages = Math.ceil(modalList.length / itemsPerPage) || 1
+  const paginatedModalList = modalList.slice((modalPage - 1) * itemsPerPage, modalPage * itemsPerPage)
 
   if (!jornadaDisponible) {
     return (
@@ -257,8 +284,12 @@ export default function Dashboard() {
         </div>
 
         {/* Aforo Manual Card */}
-        <div className="rounded-2xl border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] p-5 shadow-sm">
-          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400">
+        <div 
+          onClick={() => { setModalAforo('manual'); setModalPage(1); }}
+          className="group cursor-pointer rounded-2xl border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] p-5 shadow-sm transition-all hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-md"
+          title="Haz clic para ver todos los registros de taquilla del día"
+        >
+          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 group-hover:scale-105 transition-transform">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M17 21V19C17 17.9391 16.5786 16.9217 15.8284 16.1716C15.0783 15.4214 14.0609 15 13 15H5C3.93913 15 2.92172 15.4214 2.17157 16.1716C1.42143 16.9217 1 17.9391 1 19V21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               <path d="M9 11C11.2091 11 13 9.20914 13 7C13 4.79086 11.2091 3 9 3C6.79086 3 5 4.79086 5 7C5 9.20914 6.79086 11 9 11Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -275,11 +306,21 @@ export default function Dashboard() {
               Taquilla
             </span>
           </div>
+          <div className="mt-3 flex items-center justify-between border-t border-slate-100 dark:border-[#313D4A] pt-2.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 group-hover:text-indigo-700 dark:group-hover:text-indigo-300">
+            <span>Ver registros ({rawManualReadings.length})</span>
+            <svg className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
         </div>
 
         {/* Aforo Cámara Card */}
-        <div className="rounded-2xl border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] p-5 shadow-sm">
-          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400">
+        <div 
+          onClick={() => { setModalAforo('camara'); setModalPage(1); }}
+          className="group cursor-pointer rounded-2xl border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] p-5 shadow-sm transition-all hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-md"
+          title="Haz clic para ver todos los registros de la cámara del día"
+        >
+          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 group-hover:scale-105 transition-transform">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M15 10L21 6V18L15 14M4 18H13C14.1046 18 15 17.1046 15 16V8C15 6.89543 14.1046 6 13 6H4C2.89543 6 2 6.89543 2 8V16C2 17.1046 2.89543 18 4 18Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
@@ -294,6 +335,12 @@ export default function Dashboard() {
             <span className="rounded-full bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 text-[10px] font-semibold text-purple-600 dark:text-purple-400">
               Cámara IA
             </span>
+          </div>
+          <div className="mt-3 flex items-center justify-between border-t border-slate-100 dark:border-[#313D4A] pt-2.5 text-xs font-semibold text-purple-600 dark:text-purple-400 group-hover:text-purple-700 dark:group-hover:text-purple-300">
+            <span>Ver registros ({rawCameraReadings.length})</span>
+            <svg className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
+            </svg>
           </div>
         </div>
 
@@ -505,19 +552,84 @@ export default function Dashboard() {
 
       </div>
 
-      {/* TABLA CON PAGINACIÓN DE 10 REGISTROS */}
+      {/* TABLA CON PAGINACIÓN DE 10 REGISTROS Y SELECTOR DE VISTA */}
       <div className="mt-6">
         <div className="rounded-2xl border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] p-7 shadow-sm">
+          
+          {/* SELECTOR DE PESTAÑAS DE HISTORIAL */}
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 dark:border-[#313D4A] pb-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => { setTableTab('sensores'); setCurrentPage(1); }}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${
+                  tableTab === 'sensores'
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <span>💧 Sensores Físicos</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${tableTab === 'sensores' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
+                  {sortedReadings.length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => { setTableTab('manual'); setCurrentPage(1); }}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${
+                  tableTab === 'manual'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <span>👥 Aforo Manual (Taquilla)</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${tableTab === 'manual' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
+                  {sortedManualReadings.length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => { setTableTab('camara'); setCurrentPage(1); }}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${
+                  tableTab === 'camara'
+                    ? 'bg-purple-600 text-white shadow-md shadow-purple-500/20'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <span>📷 Aforo Cámara (IA)</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${tableTab === 'camara' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
+                  {sortedCameraReadings.length}
+                </span>
+              </button>
+            </div>
+
+            {/* BOTÓN RÁPIDO PARA ABRIR EL MODAL COMPLETO */}
+            {(tableTab === 'manual' || tableTab === 'camara') && (
+              <button
+                onClick={() => { setModalAforo(tableTab); setModalPage(1); }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all shadow-sm"
+              >
+                <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+                <span>Abrir en Vista Completa</span>
+              </button>
+            )}
+          </div>
+
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h4 className="text-xl font-bold text-slate-800 dark:text-white">Historial de Lecturas Registradas</h4>
+              <h4 className="text-xl font-bold text-slate-800 dark:text-white">
+                {tableTab === 'sensores' && 'Historial de Lecturas Registradas de Sensores'}
+                {tableTab === 'manual' && 'Historial de Ingresos Registrados en Taquilla'}
+                {tableTab === 'camara' && 'Historial de Conteo Registrado por Cámara Inteligente'}
+              </h4>
               <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                Mostrando {sortedReadings.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} - {Math.min(currentPage * itemsPerPage, sortedReadings.length)} de {sortedReadings.length} registros
+                Mostrando {currentTableList.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} - {Math.min(currentPage * itemsPerPage, currentTableList.length)} de {currentTableList.length} registros del día
               </p>
             </div>
 
             {/* CONTROLES DE PAGINACIÓN CON FLECHAS */}
-            {rawReadings.length > 0 && (
+            {currentTableList.length > 0 && (
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
@@ -549,45 +661,439 @@ export default function Dashboard() {
           </div>
 
           <div className="max-w-full overflow-x-auto">
-            <table className="w-full table-auto">
-              <thead>
-                <tr className="border-b border-slate-200 dark:border-[#313D4A] text-left">
-                  <th className="py-3 pr-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">HORA</th>
-                  <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">pH</th>
-                  <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">TURBIDEZ (NTU)</th>
-                  <th className="py-3 pl-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">TEMPERATURA (°C)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedReadings.map((reading, index) => (
-                  <tr key={index} className="border-b border-slate-100 dark:border-[#313D4A] last:border-0 hover:bg-slate-50 dark:hover:bg-[#313D4A] transition-colors">
-                    <td className="py-3 pr-4 text-sm font-medium text-slate-700 dark:text-slate-300">
-                      {formatTime(reading.fecha_hora)}
-                    </td>
-                    <td className="py-3 px-4 text-sm font-medium text-slate-800 dark:text-slate-200">
-                      {formatValue(reading.ph)}
-                    </td>
-                    <td className="py-3 px-4 text-sm font-medium text-slate-800 dark:text-slate-200">
-                      {formatValue(reading.turbidez)} NTU
-                    </td>
-                    <td className="py-3 pl-4 text-sm font-bold text-slate-800 dark:text-slate-200">
-                      {formatValue(reading.temperatura)} °C
-                    </td>
+            {/* TABLA 1: SENSORES FÍSICOS */}
+            {tableTab === 'sensores' && (
+              <table className="w-full table-auto">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-[#313D4A] text-left">
+                    <th className="py-3 pr-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">HORA</th>
+                    <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">pH</th>
+                    <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">TURBIDEZ (NTU)</th>
+                    <th className="py-3 pl-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">TEMPERATURA (°C)</th>
                   </tr>
-                ))}
-                {paginatedReadings.length === 0 && (
-                  <tr>
-                    <td colSpan="4" className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                      No hay lecturas registradas.
-                    </td>
+                </thead>
+                <tbody>
+                  {paginatedList.map((reading, index) => (
+                    <tr key={index} className="border-b border-slate-100 dark:border-[#313D4A] last:border-0 hover:bg-slate-50 dark:hover:bg-[#313D4A] transition-colors">
+                      <td className="py-3 pr-4 text-sm font-medium text-slate-700 dark:text-slate-300">
+                        {formatTime(reading.fecha_hora)}
+                      </td>
+                      <td className="py-3 px-4 text-sm font-medium text-slate-800 dark:text-slate-200">
+                        {formatValue(reading.ph)}
+                      </td>
+                      <td className="py-3 px-4 text-sm font-medium text-slate-800 dark:text-slate-200">
+                        {formatValue(reading.turbidez)} NTU
+                      </td>
+                      <td className="py-3 pl-4 text-sm font-bold text-slate-800 dark:text-slate-200">
+                        {formatValue(reading.temperatura)} °C
+                      </td>
+                    </tr>
+                  ))}
+                  {paginatedList.length === 0 && (
+                    <tr>
+                      <td colSpan="4" className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                        No hay lecturas de sensores registradas en la jornada de hoy.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {/* TABLA 2: AFORO MANUAL (TAQUILLA) */}
+            {tableTab === 'manual' && (
+              <table className="w-full table-auto">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-[#313D4A] text-left">
+                    <th className="py-3 pr-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">HORA ENTRADA</th>
+                    <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-center">TOTAL PERSONAS</th>
+                    <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-center">TARIFA 15 BS</th>
+                    <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-center">TARIFA 20 BS</th>
+                    <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-right">TOTAL RECAUDADO</th>
+                    <th className="py-3 pl-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">OBSERVACIONES</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {paginatedList.map((reg, index) => (
+                    <tr key={reg.id_registro || index} className="border-b border-slate-100 dark:border-[#313D4A] last:border-0 hover:bg-slate-50 dark:hover:bg-[#313D4A] transition-colors">
+                      <td className="py-3 pr-4 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        {formatTime(reg.hora_entrada || reg.creado_en)}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-center">
+                        <span className="inline-flex items-center justify-center rounded-full bg-indigo-50 dark:bg-indigo-900/30 px-3 py-0.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                          {reg.total_personas} pers.
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-sm font-medium text-slate-700 dark:text-slate-300 text-center">
+                        {reg.cantidad_tarifa_15 ?? 0}
+                      </td>
+                      <td className="py-3 px-4 text-sm font-medium text-slate-700 dark:text-slate-300 text-center">
+                        {reg.cantidad_tarifa_20 ?? 0}
+                      </td>
+                      <td className="py-3 px-4 text-sm font-bold text-emerald-600 dark:text-emerald-400 text-right">
+                        Bs. {Number(reg.total_recaudado ?? 0).toFixed(2)}
+                      </td>
+                      <td className="py-3 pl-4 text-sm text-slate-500 dark:text-slate-400 italic">
+                        {reg.observaciones || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                  {paginatedList.length === 0 && (
+                    <tr>
+                      <td colSpan="6" className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                        No se han registrado ingresos manuales de taquilla en la jornada de hoy.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {/* TABLA 3: AFORO CÁMARA (IA) */}
+            {tableTab === 'camara' && (
+              <table className="w-full table-auto">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-[#313D4A] text-left">
+                    <th className="py-3 pr-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">HORA DE CAPTURA</th>
+                    <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-center">PERSONAS DETECTADAS</th>
+                    <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-center">NIVEL DE AFLUENCIA</th>
+                    <th className="py-3 pl-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">DISPOSITIVO</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedList.map((reg, index) => (
+                    <tr key={reg.id_registro || index} className="border-b border-slate-100 dark:border-[#313D4A] last:border-0 hover:bg-slate-50 dark:hover:bg-[#313D4A] transition-colors">
+                      <td className="py-3 pr-4 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        {formatTime(reg.fecha_hora || reg.creado_en)}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-center">
+                        <span className="inline-flex items-center justify-center rounded-full bg-purple-50 dark:bg-purple-900/30 px-3.5 py-1 text-sm font-black text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                          {reg.cantidad_personas} bañistas
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-center">
+                        {badgeAfluencia(reg.cantidad_personas)}
+                      </td>
+                      <td className="py-3 pl-4 text-sm font-medium text-slate-600 dark:text-slate-400">
+                        <span className="inline-flex items-center gap-1.5 font-mono text-xs bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                          📷 {reg.id_dispositivo || 'ESP32-CAM'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {paginatedList.length === 0 && (
+                    <tr>
+                      <td colSpan="4" className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                        No hay lecturas registradas por la cámara inteligente en la jornada de hoy.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>
+
+      {/* MODAL DETALLADO DE HISTORIAL DE AFORO DEL DÍA */}
+      {modalAforo && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto"
+          onClick={() => setModalAforo(null)}
+        >
+          <div 
+            className="relative w-full max-w-4xl rounded-3xl bg-white dark:bg-[#24303F] border border-slate-200 dark:border-[#313D4A] shadow-2xl overflow-hidden my-6 animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header del Modal */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#313D4A] px-7 py-5">
+              <div className="flex items-center gap-3">
+                <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${
+                  modalAforo === 'manual' 
+                    ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' 
+                    : 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400'
+                }`}>
+                  {modalAforo === 'manual' ? (
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17 21V19C17 17.9391 16.5786 16.9217 15.8284 16.1716C15.0783 15.4214 14.0609 15 13 15H5C3.93913 15 2.92172 15.4214 2.17157 16.1716C1.42143 16.9217 1 17.9391 1 19V21"/>
+                      <path d="M9 11C11.2091 11 13 9.20914 13 7C13 4.79086 11.2091 3 9 3C6.79086 3 5 4.79086 5 7C5 9.20914 6.79086 11 9 11Z"/>
+                    </svg>
+                  ) : (
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M15 10L21 6V18L15 14M4 18H13C14.1046 18 15 17.1046 15 16V8C15 6.89543 14.1046 6 13 6H4C2.89543 6 2 6.89543 2 8V16C2 17.1046 2.89543 18 4 18Z"/>
+                    </svg>
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-800 dark:text-white">
+                    Registros del Día — {modalAforo === 'manual' ? 'Aforo Manual (Taquilla)' : 'Aforo Cámara Inteligente'}
+                  </h3>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Historial cronológico completo de las lecturas registradas durante la jornada de hoy
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setModalAforo(null)}
+                className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                title="Cerrar ventana"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Selector de Pestaña dentro del Modal */}
+            <div className="flex border-b border-slate-100 dark:border-[#313D4A] px-7 pt-3 bg-slate-50/50 dark:bg-slate-900/20 gap-3">
+              <button
+                onClick={() => { setModalAforo('manual'); setModalPage(1); }}
+                className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-bold transition-all ${
+                  modalAforo === 'manual'
+                    ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                <span>👥 Aforo Manual (Taquilla)</span>
+                <span className="rounded-full bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 text-xs text-indigo-600 dark:text-indigo-400 font-semibold">
+                  {sortedManualReadings.length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => { setModalAforo('camara'); setModalPage(1); }}
+                className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-bold transition-all ${
+                  modalAforo === 'camara'
+                    ? 'border-purple-600 text-purple-600 dark:text-purple-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                <span>📷 Aforo Cámara IA</span>
+                <span className="rounded-full bg-purple-50 dark:bg-purple-900/30 px-2 py-0.5 text-xs text-purple-600 dark:text-purple-400 font-semibold">
+                  {sortedCameraReadings.length}
+                </span>
+              </button>
+            </div>
+
+            {/* Contenido del Modal */}
+            <div className="p-7 max-h-[70vh] overflow-y-auto">
+              {/* Tarjetas de métricas del día en el Modal */}
+              {modalAforo === 'manual' ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                  <div className="rounded-xl border border-slate-200 dark:border-[#313D4A] bg-slate-50 dark:bg-slate-800/50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Personas Hoy</p>
+                    <p className="text-2xl font-black text-slate-800 dark:text-white mt-1">
+                      {manualSummary.total_personas ?? sensorData?.aforo_manual ?? 0}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 dark:border-[#313D4A] bg-slate-50 dark:bg-slate-800/50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-emerald-500">Recaudado Hoy</p>
+                    <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+                      Bs. {Number(manualSummary.total_recaudado ?? 0).toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 dark:border-[#313D4A] bg-slate-50 dark:bg-slate-800/50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-blue-500">Tarifa 15 Bs</p>
+                    <p className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1">
+                      {manualSummary.total_tarifa_15 ?? 0} <span className="text-xs font-normal text-slate-400">pers.</span>
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 dark:border-[#313D4A] bg-slate-50 dark:bg-slate-800/50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-indigo-500">Tarifa 20 Bs</p>
+                    <p className="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-1">
+                      {manualSummary.total_tarifa_20 ?? 0} <span className="text-xs font-normal text-slate-400">pers.</span>
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                  <div className="rounded-xl border border-slate-200 dark:border-[#313D4A] bg-slate-50 dark:bg-slate-800/50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Último Conteo en Vivo</p>
+                    <p className="text-2xl font-black text-slate-800 dark:text-white mt-1">
+                      {cameraSummary.ultimo_conteo ?? sensorData?.aforo_camara ?? 0} <span className="text-xs font-normal text-slate-400">pers.</span>
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 dark:border-[#313D4A] bg-slate-50 dark:bg-slate-800/50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-red-500">Pico Máximo del Día</p>
+                    <p className="text-2xl font-black text-red-600 dark:text-red-400 mt-1">
+                      {cameraSummary.pico_personas ?? 0} <span className="text-xs font-normal text-slate-400">bañistas</span>
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 dark:border-[#313D4A] bg-slate-50 dark:bg-slate-800/50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-purple-500">Promedio del Día</p>
+                    <p className="text-2xl font-black text-purple-600 dark:text-purple-400 mt-1">
+                      {cameraSummary.promedio_personas ?? 0} <span className="text-xs font-normal text-slate-400">bañistas</span>
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 dark:border-[#313D4A] bg-slate-50 dark:bg-slate-800/50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-blue-500">Total de Capturas</p>
+                    <p className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1">
+                      {sortedCameraReadings.length} <span className="text-xs font-normal text-slate-400">registros</span>
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Tabla dentro del Modal */}
+              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-[#313D4A]">
+                {modalAforo === 'manual' ? (
+                  <table className="w-full table-auto">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-[#313D4A] bg-slate-50/70 dark:bg-slate-800/50 text-left">
+                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">HORA</th>
+                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-center">TOTAL PERSONAS</th>
+                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-center">TARIFA 15 BS</th>
+                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-center">TARIFA 20 BS</th>
+                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-right">RECAUDADO</th>
+                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">OBSERVACIONES</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedModalList.map((reg, index) => (
+                        <tr key={reg.id_registro || index} className="border-b border-slate-100 dark:border-[#313D4A] last:border-0 hover:bg-slate-50 dark:hover:bg-[#313D4A] transition-colors">
+                          <td className="py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            {formatTime(reg.hora_entrada || reg.creado_en)}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-center">
+                            <span className="inline-flex items-center justify-center rounded-full bg-indigo-50 dark:bg-indigo-900/30 px-3 py-0.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                              {reg.total_personas} pers.
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-sm font-medium text-slate-700 dark:text-slate-300 text-center">
+                            {reg.cantidad_tarifa_15 ?? 0}
+                          </td>
+                          <td className="py-3 px-4 text-sm font-medium text-slate-700 dark:text-slate-300 text-center">
+                            {reg.cantidad_tarifa_20 ?? 0}
+                          </td>
+                          <td className="py-3 px-4 text-sm font-bold text-emerald-600 dark:text-emerald-400 text-right">
+                            Bs. {Number(reg.total_recaudado ?? 0).toFixed(2)}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-slate-500 dark:text-slate-400 italic">
+                            {reg.observaciones || '—'}
+                          </td>
+                        </tr>
+                      ))}
+                      {paginatedModalList.length === 0 && (
+                        <tr>
+                          <td colSpan="6" className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                            No se han registrado entradas de taquilla en la jornada de hoy.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
+                  <table className="w-full table-auto">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-[#313D4A] bg-slate-50/70 dark:bg-slate-800/50 text-left">
+                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">HORA DE CAPTURA</th>
+                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-center">PERSONAS DETECTADAS</th>
+                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-center">NIVEL DE AFLUENCIA</th>
+                        <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">DISPOSITIVO</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedModalList.map((reg, index) => (
+                        <tr key={reg.id_registro || index} className="border-b border-slate-100 dark:border-[#313D4A] last:border-0 hover:bg-slate-50 dark:hover:bg-[#313D4A] transition-colors">
+                          <td className="py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            {formatTime(reg.fecha_hora || reg.creado_en)}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-center">
+                            <span className="inline-flex items-center justify-center rounded-full bg-purple-50 dark:bg-purple-900/30 px-3.5 py-1 text-sm font-black text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              {reg.cantidad_personas} bañistas
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-sm text-center">
+                            {badgeAfluencia(reg.cantidad_personas)}
+                          </td>
+                          <td className="py-3 px-4 text-sm font-medium text-slate-600 dark:text-slate-400">
+                            <span className="inline-flex items-center gap-1.5 font-mono text-xs bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                              📷 {reg.id_dispositivo || 'ESP32-CAM'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {paginatedModalList.length === 0 && (
+                        <tr>
+                          <td colSpan="4" className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                            No hay lecturas registradas por la cámara inteligente en la jornada de hoy.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* Paginación del Modal */}
+              {modalList.length > 0 && (
+                <div className="mt-5 flex items-center justify-between">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Mostrando {(modalPage - 1) * itemsPerPage + 1} - {Math.min(modalPage * itemsPerPage, modalList.length)} de {modalList.length} registros
+                  </p>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setModalPage((prev) => Math.max(prev - 1, 1))}
+                      disabled={modalPage === 1}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 transition-all hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold"
+                    >
+                      ←
+                    </button>
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Página {modalPage} de {modalTotalPages}
+                    </span>
+                    <button
+                      onClick={() => setModalPage((prev) => Math.min(prev + 1, modalTotalPages))}
+                      disabled={modalPage === modalTotalPages}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 transition-all hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold"
+                    >
+                      →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer del Modal */}
+            <div className="flex items-center justify-end border-t border-slate-100 dark:border-[#313D4A] px-7 py-4 bg-slate-50/50 dark:bg-slate-900/20">
+              <button
+                onClick={() => setModalAforo(null)}
+                className="rounded-xl bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 dark:hover:bg-slate-600 text-white font-bold text-sm px-5 py-2.5 transition-all shadow-sm"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
+  )
+}
+
+function badgeAfluencia(cantidad) {
+  if (cantidad > 30) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 dark:bg-red-900/20 px-2.5 py-0.5 text-xs font-semibold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800">
+        <span className="h-1.5 w-1.5 rounded-full bg-red-500"></span>
+        Alta afluencia
+      </span>
+    )
+  }
+  if (cantidad > 15) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 dark:bg-amber-900/20 px-2.5 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+        <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+        Moderada
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+      Baja / Normal
+    </span>
   )
 }
 

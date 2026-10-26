@@ -4,6 +4,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # Agregar la carpeta backend al sys.path si no está
 backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if backend_dir not in sys.path:
@@ -30,17 +37,19 @@ except ImportError:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Iniciar detección de cámara automáticamente al arrancar el servidor
-    try:
-        start_camera_service_background()
-    except Exception as e:
-        print(f"⚠️ No se pudo iniciar el servicio automático de cámara: {e}")
+    # Iniciar detección de cámara solo si está habilitada (por defecto desactivada para no bloquear arranque si no hay hardware)
+    iniciar_camara = os.getenv("AUTO_START_CAMERA", "false").lower() in ("true", "1", "yes")
+    if iniciar_camara:
+        try:
+            start_camera_service_background()
+        except Exception as e:
+            print(f"[Aviso] No se pudo iniciar el servicio de cámara: {e}")
     yield
-    # Detener hilo de cámara al apagar el servidor
-    try:
-        stop_camera_service_background()
-    except Exception:
-        pass
+    if iniciar_camara:
+        try:
+            stop_camera_service_background()
+        except Exception:
+            pass
 
 
 app = FastAPI(

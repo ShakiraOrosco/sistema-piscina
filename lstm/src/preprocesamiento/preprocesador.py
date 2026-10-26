@@ -37,10 +37,14 @@ def construir_features_y_targets(df: pd.DataFrame):
     
     for i in range(N):
         row = df.iloc[i]
+        turb1 = row["turbidez_1"] if "turbidez_1" in row else row["turbidez_visual_1"]
+        turb2 = row["turbidez_2"] if "turbidez_2" in row else row["turbidez_visual_2"]
+        turb3 = row["turbidez_3"] if "turbidez_3" in row else row["turbidez_visual_3"]
+
         # Momento 1, 2, 3
-        m1 = [row["pH_1"], row["turbidez_visual_1"], row["temperatura_1"], row["banistas_1"]]
-        m2 = [row["pH_2"], row["turbidez_visual_2"], row["temperatura_2"], row["banistas_2"]]
-        m3 = [row["pH_3"], row["turbidez_visual_3"], row["temperatura_3"], row["banistas_3"]]
+        m1 = [row["pH_1"], turb1, row["temperatura_1"], row["banistas_1"]]
+        m2 = [row["pH_2"], turb2, row["temperatura_2"], row["banistas_2"]]
+        m3 = [row["pH_3"], turb3, row["temperatura_3"], row["banistas_3"]]
         
         X_seq[i, 0, :] = m1
         X_seq[i, 1, :] = m2
@@ -48,7 +52,7 @@ def construir_features_y_targets(df: pd.DataFrame):
         
         # Estadísticas agregadas
         phs = [row["pH_1"], row["pH_2"], row["pH_3"]]
-        turbs = [row["turbidez_visual_1"], row["turbidez_visual_2"], row["turbidez_visual_3"]]
+        turbs = [turb1, turb2, turb3]
         temps = [row["temperatura_1"], row["temperatura_2"], row["temperatura_3"]]
         banistas = [row["banistas_1"], row["banistas_2"], row["banistas_3"]]
         

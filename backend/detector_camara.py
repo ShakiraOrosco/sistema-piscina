@@ -5,6 +5,13 @@ import json
 import threading
 import requests
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # URL del stream de video del ESP32-CAM
 ESP32_CAM_URL = os.getenv("ESP32_CAM_URL", "http://10.0.1.242:8080/video")
 API_AFORO_URL = os.getenv("API_AFORO_URL", "http://localhost:8000/api/v1/aforo-camara")
@@ -284,7 +291,7 @@ def start_camera_service_background(show_window: bool = False):
     _stop_event.clear()
     _camera_thread = threading.Thread(target=run_camera_detector, kwargs={"show_window": show_window}, daemon=True)
     _camera_thread.start()
-    print(f"🚀 [Cámara Service] Servicio automático iniciado en segundo plano (Ventana visible: {show_window or SHOW_WINDOW_ENV}).")
+    print(f"[Camara Service] Servicio iniciado en segundo plano (Ventana visible: {show_window or SHOW_WINDOW_ENV}).")
 
 
 def stop_camera_service_background():

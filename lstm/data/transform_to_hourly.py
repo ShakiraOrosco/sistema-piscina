@@ -49,8 +49,8 @@ def transform_to_hourly(input_file, output_mediciones, output_dosis):
     df_mediciones.to_csv(output_mediciones, index=False)
     df_dosis.to_csv(output_dosis, index=False)
     
-    print(f"✅ Archivo de Mediciones guardado: {output_mediciones} ({len(df_mediciones)} filas)")
-    print(f"✅ Archivo de Dosificación guardado: {output_dosis} ({len(df_dosis)} filas)")
+    print(f"[OK] Archivo de Mediciones guardado: {output_mediciones} ({len(df_mediciones)} filas)")
+    print(f"[OK] Archivo de Dosificación guardado: {output_dosis} ({len(df_dosis)} filas)")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Transforma el dataset diario a dos datasets relacionales.")
