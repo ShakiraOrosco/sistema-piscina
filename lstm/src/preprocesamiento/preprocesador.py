@@ -23,16 +23,32 @@ def cargar_datos_csv(filepath: str = DATASET_PATH) -> pd.DataFrame:
     
     return df
 
+def extraer_features_paso(ph, turb, temp, banistas, ph_inicial):
+    """
+    Construye el vector de características de 7 dimensiones:
+    1. pH
+    2. Turbidez
+    3. Temperatura
+    4. Bañistas
+    5. Delta pH (variación respecto a la mañana)
+    6. Desviación de neutralidad (|pH - 7.4|)
+    7. Carga biológica y térmica (Bañistas * Temp / 1000)
+    """
+    delta_ph = ph - ph_inicial
+    dev_neutro = abs(ph - 7.4)
+    carga_bio = (banistas * temp) / 1000.0
+    return [ph, turb, temp, banistas, delta_ph, dev_neutro, carga_bio]
+
 def construir_features_y_targets(df: pd.DataFrame):
     """
     Construye las matrices de características X y objetivos y a partir del DataFrame.
     Retorna:
-      - X_seq: array 3D de forma (N_dias, 3_pasos, 4_features) [pH, temperatura, turbidez, bañistas]
-      - X_tabular: array 2D para XGBoost / modelos tabulares
+      - X_seq: array 3D de forma (N_dias, 3_pasos, 7_features)
+      - X_tabular: array 2D para modelos tabulares
       - y: array 2D (N_dias, 3_targets) [dosis_sulfato_aluminio_g, dosis_sulfato_cobre_g, dosis_cloro_g]
     """
     N = len(df)
-    X_seq = np.zeros((N, 3, 4))
+    X_seq = np.zeros((N, 3, 7))
     X_tabular = []
     
     for i in range(N):
@@ -41,20 +57,24 @@ def construir_features_y_targets(df: pd.DataFrame):
         turb2 = row["turbidez_2"] if "turbidez_2" in row else row["turbidez_visual_2"]
         turb3 = row["turbidez_3"] if "turbidez_3" in row else row["turbidez_visual_3"]
 
-        # Momento 1, 2, 3
-        m1 = [row["pH_1"], turb1, row["temperatura_1"], row["banistas_1"]]
-        m2 = [row["pH_2"], turb2, row["temperatura_2"], row["banistas_2"]]
-        m3 = [row["pH_3"], turb3, row["temperatura_3"], row["banistas_3"]]
+        ph1, temp1, ban1 = row["pH_1"], row["temperatura_1"], row["banistas_1"]
+        ph2, temp2, ban2 = row["pH_2"], row["temperatura_2"], row["banistas_2"]
+        ph3, temp3, ban3 = row["pH_3"], row["temperatura_3"], row["banistas_3"]
+
+        # Momento 1, 2, 3 con 7 características
+        m1 = extraer_features_paso(ph1, turb1, temp1, ban1, ph1)
+        m2 = extraer_features_paso(ph2, turb2, temp2, ban2, ph1)
+        m3 = extraer_features_paso(ph3, turb3, temp3, ban3, ph1)
         
         X_seq[i, 0, :] = m1
         X_seq[i, 1, :] = m2
         X_seq[i, 2, :] = m3
         
         # Estadísticas agregadas
-        phs = [row["pH_1"], row["pH_2"], row["pH_3"]]
+        phs = [ph1, ph2, ph3]
         turbs = [turb1, turb2, turb3]
-        temps = [row["temperatura_1"], row["temperatura_2"], row["temperatura_3"]]
-        banistas = [row["banistas_1"], row["banistas_2"], row["banistas_3"]]
+        temps = [temp1, temp2, temp3]
+        banistas = [ban1, ban2, ban3]
         
         prom_ph = sum(phs) / 3.0
         max_ph = max(phs)
@@ -64,9 +84,15 @@ def construir_features_y_targets(df: pd.DataFrame):
         prom_temp = sum(temps) / 3.0
         total_banistas = sum(banistas)
         max_banistas = max(banistas)
+        delta_ph_dia = ph3 - ph1
+        dev_neutro_prom = sum(abs(p - 7.4) for p in phs) / 3.0
+        carga_bio_total = sum((b * t) / 1000.0 for b, t in zip(banistas, temps))
         
-        # Vector aplanado para XGBoost (12 mediciones brutas + 8 estadísticas)
-        vec_tab = m1 + m2 + m3 + [prom_ph, max_ph, min_ph, prom_turb, max_turb, prom_temp, total_banistas, max_banistas]
+        # Vector aplanado para XGBoost (21 mediciones/features + 11 estadísticas)
+        vec_tab = m1 + m2 + m3 + [
+            prom_ph, max_ph, min_ph, prom_turb, max_turb, prom_temp,
+            total_banistas, max_banistas, delta_ph_dia, dev_neutro_prom, carga_bio_total
+        ]
         X_tabular.append(vec_tab)
         
     X_tabular = np.array(X_tabular)

@@ -41,7 +41,7 @@ def _cargar_artefactos():
         if not os.path.exists(lstm_path):
             raise FileNotFoundError(f"No se encontró el modelo LSTM en {lstm_path}")
 
-        model = LSTMRegressor(input_dim=4, hidden_dim=64, num_layers=2, output_dim=3)
+        model = LSTMRegressor(input_dim=7, hidden_dim=64, num_layers=2, output_dim=3, bidirectional=True)
         model.load_state_dict(torch.load(lstm_path, map_location="cpu"))
         model.eval()
 
@@ -247,7 +247,19 @@ def predecir_cierre_dia(
 
     franjas = seleccionar_franjas(mediciones_parciales, aforos_camara, aforos_manual, perfiles=perfiles)
     # Orden de features idéntico al entrenamiento: [pH, turbidez, temperatura, bañistas]
-    seq = [[f["ph"], f["turbidez"], f["temperatura"], f["banistas"]] for f in franjas]
+    # Orden de 7 features fisicoquímicos idéntico al entrenamiento:
+    from lstm.src.preprocesamiento.preprocesador import extraer_features_paso
+    ph_inicial = float(franjas[0]["ph"]) if franjas else 7.2
+    seq = [
+        extraer_features_paso(
+            float(f["ph"]),
+            float(f["turbidez"]),
+            float(f["temperatura"]),
+            float(f["banistas"]),
+            ph_inicial
+        )
+        for f in franjas
+    ]
 
     arr_seq = np.array([seq], dtype=float)  # (1, 3, 4)
     N, steps, feats = arr_seq.shape
