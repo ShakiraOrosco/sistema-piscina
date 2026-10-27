@@ -146,7 +146,7 @@ def run_camera_detector(show_window: bool = False):
                     confidence = float(box.conf[0])
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     
-                    # Punto base de la persona (pies / base central)
+                    # Punto base de la persona
                     px = (x1 + x2) // 2
                     py = y2
 

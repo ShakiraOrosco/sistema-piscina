@@ -26,10 +26,6 @@ def cargar_datos_csv(filepath: str = DATASET_PATH) -> pd.DataFrame:
 def construir_features_y_targets(df: pd.DataFrame):
     """
     Construye las matrices de características X y objetivos y a partir del DataFrame.
-    Retorna:
-      - X_seq: array 3D de forma (N_dias, 3_pasos, 4_features) [pH, temperatura, turbidez, bañistas]
-      - X_tabular: array 2D para XGBoost / modelos tabulares
-      - y: array 2D (N_dias, 3_targets) [dosis_sulfato_aluminio_g, dosis_sulfato_cobre_g, dosis_cloro_g]
     """
     N = len(df)
     X_seq = np.zeros((N, 3, 4))
