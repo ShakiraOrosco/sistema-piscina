@@ -1,0 +1,14 @@
+{
+  "name": "sistema-piscina",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Sistema de Monitoreo y Predicción de Calidad del Agua con IoT y LSTM - Piscina Olímpica Playa Azul",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "test:e2e": "npm --prefix frontend run test:e2e",
+    "test:e2e:ui": "npm --prefix frontend run test:e2e:ui",
+    "test:e2e:report": "npm --prefix frontend run test:e2e:report",
+    "analisis:figuras": "backend\\.venv\\Scripts\\python.exe lstm/reports/generar_figuras_analisis.py"
+  }
+}
