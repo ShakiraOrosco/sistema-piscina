@@ -58,7 +58,9 @@ def seed_aforo_manual(id_jornada):
             (13, 30, 8,  17, "Turno tarde"),
             (14, 15, 8,  20, "Pico vespertino"),
             (15, 10, 6,  12, "Tarde familiar"),
-            (16, 5,  4,  6,  "Último ingreso de la jornada"),
+            (16, 5,  4,  6,  "Tarde recreativa"),
+            (17, 15, 2,  3,  "Turno noche / vespertino"),
+            (18, 5,  1,  2,  "Último ingreso antes del cierre"),
         ]
         
         for h, m, t15, t20, obs in ventas_taquilla:
@@ -95,7 +97,7 @@ def post_reading(hour, ph, turbidez, temperatura, personas):
         "personas": personas,
         "fecha_hora": dt_str
     }
-    print(f"\n--- Enviando lectura de las {hour:02d}:00 (pH: {ph}, Turb: {turbidez} NTU, Temp: {temperatura}C, Aforo: {personas} pers) ---")
+    print(f"\n--- Enviando lectura de las {hour:02d}:00 (pH: {ph}, Turb: {turbidez} NTU, Temp: {temperatura}C, Aforo: {personas} pers) ---", flush=True)
     try:
         response = requests.post(API_URL, json=payload, timeout=30)
     except requests.exceptions.RequestException:
@@ -104,25 +106,25 @@ def post_reading(hour, ph, turbidez, temperatura, personas):
 
     if response.status_code == 201:
         data = response.json()
-        print("[OK] Guardado con exito en BD!")
+        print("[OK] Guardado con exito en BD!", flush=True)
         pred = data.get('prediccion', {})
         if pred:
-            print(f"-> Prediccion actualizada (Franjas capturadas: {pred.get('franjas_capturadas')}/3 - Tipo: {pred.get('tipo')})")
-            print(f"   Cloro: {pred.get('cloro_g')}g | Aluminio: {pred.get('aluminio_g')}g | Cobre: {pred.get('cobre_g')}g")
+            print(f"-> Prediccion actualizada (Franjas capturadas: {pred.get('franjas_capturadas')}/3 - Tipo: {pred.get('tipo')})", flush=True)
+            print(f"   Cloro: {pred.get('cloro_g')}g | Aluminio: {pred.get('aluminio_g')}g | Cobre: {pred.get('cobre_g')}g", flush=True)
     else:
-        print("Error:", response.status_code, response.text)
+        print("Error:", response.status_code, response.text, flush=True)
 
 
 if __name__ == "__main__":
     id_jornada = clean_todays_data()
     seed_aforo_manual(id_jornada)
 
-    # ── Lecturas horarias coherentes de 08:00 a 17:00 ──
+    # ── Lecturas horarias coherentes de 08:00 a 20:00 (8:00 PM) ──
     # Siguen la dinámica real de una piscina:
-    # - Radiación solar: la temperatura sube desde la mañana (26.4°C) hasta el pico térmico de las 14:00 (31.8°C), bajando a las 17:00.
-    # - Carga de bañistas: inicia baja (5 pers), alcanza su pico en la tarde (65 pers) y baja hacia el cierre (10 pers).
-    # - Turbidez: aumenta con el ingreso de bañistas y protectores solares (1.15 -> 3.95 NTU), luego el filtrado decanta a 2.95 NTU.
-    # - pH: oscila fisiológicamente entre 7.22 y 7.48, estabilizándose a 7.39.
+    # - Radiación solar: la temperatura sube desde la mañana (26.4°C) hasta el pico térmico de las 14:00 (31.8°C), bajando al anochecer (26.9°C a las 20:00).
+    # - Carga de bañistas: inicia baja (5 pers), alcanza su pico en la tarde (65 pers) y desciende gradualmente al cierre (0 pers a las 20:00).
+    # - Turbidez: aumenta con el ingreso de bañistas y protectores solares (1.15 -> 3.95 NTU), luego el filtrado recupera el agua decantando a 1.65 NTU.
+    # - pH: oscila fisiológicamente entre 7.22 y 7.48, estabilizándose a 7.28.
     lecturas = [
         # (hora, ph, turbidez, temperatura, bañistas_cámara)
         (8,  7.22, 1.15, 26.4, 5),   # Apertura matutina, agua limpia
@@ -134,14 +136,17 @@ if __name__ == "__main__":
         (14, 7.46, 3.75, 31.8, 65),  # Pico térmico y máxima afluencia de la tarde
         (15, 7.48, 3.95, 31.4, 56),  # Tarde de sol, protectores solares activos
         (16, 7.44, 3.50, 30.4, 34),  # Franja 3 oficial LSTM, bañistas empezando a salir
-        (17, 7.39, 2.95, 29.3, 10),  # Cierre de jornada, filtrado recuperando agua
+        (17, 7.39, 2.95, 29.3, 12),  # Tarde/noche, filtrado activo
+        (18, 7.35, 2.40, 28.4, 8),   # 18:00 (6:00 PM) - Afluencia reducida
+        (19, 7.31, 1.95, 27.6, 3),   # 19:00 (7:00 PM) - Salida de bañistas
+        (20, 7.28, 1.65, 26.9, 0),   # 20:00 (8:00 PM) - Cierre de jornada
     ]
 
     for h, ph, turb, temp, pers in lecturas:
         post_reading(h, ph, turb, temp, pers)
 
     print("\n" + "="*60)
-    print("[OK] Simulacion completa finalizada con exito de 08:00 a 17:00.")
+    print("[OK] Simulacion completa finalizada con exito de 08:00 a 20:00 (8:00 PM).")
     print("[OK] Las 3 franjas LSTM (08:00, 12:00, 16:00) han sido capturadas.")
     print("[OK] Ya puedes revisar el panel en el frontend (Dashboard, Caja y Monitoreo).")
     print("="*60)

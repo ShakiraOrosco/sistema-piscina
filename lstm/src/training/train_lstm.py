@@ -21,42 +21,46 @@ os.makedirs(REPORTS_DIR, exist_ok=True)
 
 class LSTMRegressor(nn.Module):
     """
-    Red Neuronal Recurrente LSTM con Regularización Dropout para prevenir sobreajuste.
-    Entrada: (Batch, Seq_len=3, Features=4)
+    Red Neuronal Recurrente BiLSTM con regularización Dropout y conexiones bidireccionales.
+    Entrada: (Batch, Seq_len=3, Features=7) [pH, turb, temp, bañistas, delta_pH, dev_neutro, carga_bio]
     Salida: (Batch, Targets=3) -> [aluminio_g, cobre_g, cloro_g]
     """
-    def __init__(self, input_dim=4, hidden_dim=64, num_layers=2, output_dim=3, dropout=0.25):
+    def __init__(self, input_dim=7, hidden_dim=64, num_layers=2, output_dim=3, dropout=0.2, bidirectional=True):
         super(LSTMRegressor, self).__init__()
+        self.bidirectional = bidirectional
         self.lstm = nn.LSTM(
             input_size=input_dim,
             hidden_size=hidden_dim,
             num_layers=num_layers,
             batch_first=True,
-            dropout=dropout if num_layers > 1 else 0.0
+            dropout=dropout if num_layers > 1 else 0.0,
+            bidirectional=bidirectional
         )
-        self.fc1 = nn.Linear(hidden_dim, 32)
+        fc_in = hidden_dim * 2 if bidirectional else hidden_dim
+        self.fc1 = nn.Linear(fc_in, 32)
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
         self.fc2 = nn.Linear(32, output_dim)
 
     def forward(self, x):
-        # x shape: (batch, 3, 4)
         out, (h_n, c_n) = self.lstm(x)
-        # Usar la última salida temporal
         last_out = out[:, -1, :]
         h1 = self.dropout(self.relu(self.fc1(last_out)))
         output = self.fc2(h1)
         return output
 
+# Alias para compatibilidad
+BiLSTMRegressor = LSTMRegressor
+
 def entrenar_modelo_lstm():
-    print("=== INICIANDO ENTRENAMIENTO LSTM (PyTorch) ===")
+    print("=== INICIANDO ENTRENAMIENTO BI-LSTM OPTIMIZADO (PyTorch) ===")
     df = cargar_datos_csv()
     X_seq, _, y = construir_features_y_targets(df)
     
-    # Preprocesar datos
+    # Preprocesar datos (MinMaxScaler)
     X_scaled, y_scaled, scaler_X, scaler_y = preprocesar_datos_lstm(X_seq, y, fit_scaler=True)
     
-    # Dividir temporalmente
+    # Dividir temporalmente (70% train, 15% val, 15% test)
     X_tr, y_tr, X_val, y_val, X_te, y_te = dividir_datos(X_scaled, y_scaled)
     
     # Convertir a tensores de PyTorch
@@ -68,14 +72,17 @@ def entrenar_modelo_lstm():
     train_dataset = TensorDataset(X_tr_t, y_tr_t)
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
     
-    # Instanciar Modelo, Criterio y Optimizador con L2 Regularization (Anti-overfitting)
-    model = LSTMRegressor(input_dim=4, hidden_dim=64, num_layers=2, output_dim=3, dropout=0.25)
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
+    # Modelo BiLSTM con 7 características
+    model = LSTMRegressor(input_dim=7, hidden_dim=64, num_layers=2, output_dim=3, dropout=0.2, bidirectional=True)
+    
+    # Función de pérdida SmoothL1 (Huber Loss) para maximizar la precisión porcentual lineal
+    criterion = nn.SmoothL1Loss(beta=0.05)
+    optimizer = optim.Adam(model.parameters(), lr=0.002, weight_decay=1e-5)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
     
     best_val_loss = float('inf')
     epochs = 100
-    patience = 15
+    patience = 20
     patience_counter = 0
     
     train_losses = []
@@ -118,11 +125,12 @@ def entrenar_modelo_lstm():
                 val_losses_chem[c].append(c_val)
             
         val_losses.append(epoch_val_loss)
+        scheduler.step(epoch_val_loss)
         
         if epoch % 10 == 0 or epoch == 1:
             print(f"Época [{epoch:03d}/{epochs:03d}] - Train Loss: {epoch_train_loss:.5f} | Val Loss: {epoch_val_loss:.5f}")
             
-        # Early Stopping
+        # Early Stopping guardando los mejores pesos
         if epoch_val_loss < best_val_loss:
             best_val_loss = epoch_val_loss
             patience_counter = 0
@@ -140,11 +148,11 @@ def entrenar_modelo_lstm():
     
     # 1. Gráfica de curva de aprendizaje general
     plt.figure(figsize=(8, 4))
-    plt.plot(train_losses, label='Pérdida Entrenamiento (Train MSE)')
-    plt.plot(val_losses, label='Pérdida Validación (Val MSE)')
-    plt.title('Curva de Aprendizaje - Modelo LSTM (Anti-Overfitting)')
+    plt.plot(train_losses, label='Pérdida Entrenamiento (Smooth L1 Loss)')
+    plt.plot(val_losses, label='Pérdida Validación (Smooth L1 Loss)')
+    plt.title('Curva de Aprendizaje - Modelo BiLSTM Optimizado (Anti-Overfitting)')
     plt.xlabel('Época')
-    plt.ylabel('Pérdida (MSE)')
+    plt.ylabel('Pérdida (Smooth L1)')
     plt.legend()
     plt.grid(True)
     plt.savefig(os.path.join(REPORTS_DIR, "curva_aprendizaje_lstm.png"))
@@ -152,13 +160,13 @@ def entrenar_modelo_lstm():
 
     # 2. Gráfica de curvas de aprendizaje individual por químico
     fig, axes = plt.subplots(3, 1, figsize=(9, 8), sharex=True)
-    fig.suptitle('Curvas de Aprendizaje por Químico - Modelo LSTM', fontsize=11, y=0.98)
+    fig.suptitle('Curvas de Aprendizaje por Químico - Modelo BiLSTM', fontsize=11, y=0.98)
     nombres_chem = ['Sulfato de Aluminio', 'Sulfato de Cobre', 'Cloro']
     colores_chem = ['#1f77b4', '#2ca02c', '#d62728']
     for i in range(3):
-        axes[i].plot(train_losses_chem[i], label='Train MSE', color=colores_chem[i], linewidth=1.5)
-        axes[i].plot(val_losses_chem[i], label='Val MSE', color='#e65100', linestyle='--', linewidth=1.5)
-        axes[i].set_ylabel(f'MSE ({nombres_chem[i]})', fontsize=9)
+        axes[i].plot(train_losses_chem[i], label='Train Loss', color=colores_chem[i], linewidth=1.5)
+        axes[i].plot(val_losses_chem[i], label='Val Loss', color='#e65100', linestyle='--', linewidth=1.5)
+        axes[i].set_ylabel(f'Loss ({nombres_chem[i]})', fontsize=9)
         axes[i].legend(loc='upper right', fontsize=8)
         axes[i].grid(True, linestyle=':', alpha=0.6)
         axes[i].tick_params(labelsize=8.5)
@@ -189,7 +197,7 @@ def graficar_prediccion_dosis_quimicos(y_true, y_pred, n_jornadas=60, filename="
       - aluminio_g (g)
       - cobre_g (g)
       - cloro_g (g)
-    en una serie temporal de N jornadas, idéntico al formato solicitado.
+    en una serie temporal de N jornadas.
     """
     n_puntos = min(n_jornadas, len(y_true))
     x = np.arange(n_puntos)
@@ -201,7 +209,7 @@ def graficar_prediccion_dosis_quimicos(y_true, y_pred, n_jornadas=60, filename="
     ]
 
     fig, axes = plt.subplots(3, 1, figsize=(11, 7.5), sharex=True)
-    fig.suptitle("Predicción de dosis al cierre vs. dosis real aplicada", fontsize=11, y=0.98)
+    fig.suptitle("Predicción de dosis al cierre vs. dosis real aplicada (BiLSTM)", fontsize=11, y=0.98)
 
     for i, q in enumerate(quimicos_info):
         ax = axes[i]

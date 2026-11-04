@@ -42,15 +42,41 @@ def registrar_log(
 
 
 @router.get("/logs")
-def listar_logs(claims: dict = Depends(lambda: __import__('app.routers.auth', fromlist=['administrador_actual']).administrador_actual)):
-    """Obtiene el historial de auditoría de actividades del sistema."""
+def listar_logs(
+    fecha: Optional[str] = None,
+    limit: Optional[int] = 500,
+    claims: dict = Depends(lambda: __import__('app.routers.auth', fromlist=['administrador_actual']).administrador_actual)
+):
+    """Obtiene el historial de auditoría de actividades del sistema con soporte para filtrado por fecha."""
     conn = get_connection()
     if conn is None:
         raise HTTPException(status_code=500, detail="No se pudo conectar a la base de datos")
     try:
         cur = get_dict_cursor(conn)
-        cur.execute(
-            """
+        conditions = []
+        params = []
+
+        if fecha and fecha.strip():
+            fecha_clean = fecha.strip()
+            conditions.append(
+                """(
+                    DATE(l.fecha_hora) = %s 
+                    OR l.fecha_hora::text LIKE %s
+                    OR (l.fecha_hora >= %s AND l.fecha_hora <= %s)
+                )"""
+            )
+            params.extend([
+                fecha_clean,
+                f"{fecha_clean}%",
+                f"{fecha_clean} 00:00:00",
+                f"{fecha_clean} 23:59:59.999999"
+            ])
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        query_limit = max(1, min(limit or 500, 2000))
+        params.append(query_limit)
+
+        sql = f"""
             SELECT 
                 l.id_log,
                 l.id_usuario,
@@ -66,10 +92,11 @@ def listar_logs(claims: dict = Depends(lambda: __import__('app.routers.auth', fr
                 u.sigla_rol
             FROM log_auditoria l
             LEFT JOIN usuario u ON u.id_usuario = l.id_usuario
+            {where_clause}
             ORDER BY l.fecha_hora DESC
-            LIMIT 100
-            """
-        )
+            LIMIT %s
+        """
+        cur.execute(sql, tuple(params))
         logs = [serializar_dict(log) for log in cur.fetchall()]
         return logs
     finally:

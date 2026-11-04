@@ -42,7 +42,7 @@ def evaluar_y_comparar():
     if not os.path.exists(lstm_path):
         raise FileNotFoundError("Primero debes entrenar el modelo LSTM.")
         
-    modelo_lstm = LSTMRegressor(input_dim=4, hidden_dim=64, num_layers=2, output_dim=3)
+    modelo_lstm = LSTMRegressor(input_dim=7, hidden_dim=64, num_layers=2, output_dim=3, bidirectional=True)
     modelo_lstm.load_state_dict(torch.load(lstm_path))
     modelo_lstm.eval()
     

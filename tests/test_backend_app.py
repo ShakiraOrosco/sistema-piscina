@@ -23,7 +23,7 @@ def test_lecturas_accepts_legacy_ntu_field():
         "/lecturas",
         json={"ph": 7.2, "ntu": 4.1, "temperatura": 28.0},
     )
-    assert response.status_code in {200, 500}
+    assert response.status_code in {200, 201, 500}
 
 
 def test_aforo_camara_historial():

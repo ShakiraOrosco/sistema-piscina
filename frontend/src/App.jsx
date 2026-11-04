@@ -11,6 +11,7 @@ import UsersPage from './pages/Users'
 import CajaPage from './pages/Caja'
 import InventarioPage from './pages/Inventario'
 import AuditoriaPage from './pages/Auditoria'
+import ReportesPage from './pages/Reportes'
 import NotFound from './pages/NotFound'
 import './App.css'
 
@@ -46,6 +47,14 @@ function ProtectedInventario() {
   return <InventarioPage />
 }
 
+function ProtectedReportes() {
+  const { session } = useAuth()
+  if (session?.usuario?.sigla_rol === 'CAJ') {
+    return <Navigate to="/caja" replace />
+  }
+  return <ReportesPage />
+}
+
 function App() {
   return (
     <Routes>
@@ -62,6 +71,7 @@ function App() {
         <Route path="/users" element={<UsersPage />} />
         <Route path="/caja" element={<ProtectedCaja />} />
         <Route path="/inventario" element={<ProtectedInventario />} />
+        <Route path="/reportes" element={<ProtectedReportes />} />
         <Route path="/auditoria" element={<AuditoriaPage />} />
       </Route>
 
