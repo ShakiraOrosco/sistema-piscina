@@ -140,7 +140,8 @@ class DosificacionManager:
         cantidad_g: float,
         tipo: str = "parcial",
         id_usuario: Optional[int] = None,
-        descontar_inventario: bool = True
+        descontar_inventario: bool = True,
+        validar_cuota_maxima: bool = True
     ) -> Dict[str, Any]:
         """Inicia el proceso de dosificación parcial o final."""
         with self._lock:
@@ -159,6 +160,48 @@ class DosificacionManager:
                     "ok": False,
                     "error": "La cantidad a dosificar debe ser mayor a 0 gramos.",
                 }
+
+            # Regla de seguridad: el sulfato de aluminio es un floculante y solo se permite en dosificación final
+            if tipo.lower() == "parcial" and "aluminio" in (quimico or "").lower():
+                return {
+                    "ok": False,
+                    "error": "El Sulfato de Aluminio solo se puede aplicar en la Dosificación Final al cierre de la jornada (es un floculante clarificador).",
+                }
+
+            # Validación de seguridad: no permitir sobredosificar si ya se completó la cuota diaria
+            if validar_cuota_maxima:
+                conn_check = get_connection()
+                if conn_check:
+                    try:
+                        id_jornada = obtener_o_crear_jornada_hoy(conn_check)
+                        cur_check = conn_check.cursor()
+                        q_norm = (quimico or "").lower()
+                        cur_check.execute(
+                            "SELECT cloro_pred, cobre_pred, aluminio_pred FROM prediccion WHERE id_jornada = %s ORDER BY fecha_prediccion DESC LIMIT 1",
+                            (id_jornada,)
+                        )
+                        pred_row = cur_check.fetchone()
+                        if pred_row:
+                            pred_max = float(pred_row[0] if "cloro" in q_norm else (pred_row[1] if "cobre" in q_norm else pred_row[2]) or 0)
+                            if pred_max > 0:
+                                q_filtro = "%cloro%" if "cloro" in q_norm else ("%cobre%" if "cobre" in q_norm else "%aluminio%")
+                                cur_check.execute(
+                                    "SELECT COALESCE(SUM(cantidad_g), 0) FROM dosificacion_parcial WHERE id_jornada = %s AND LOWER(quimico) LIKE %s",
+                                    (id_jornada, q_filtro)
+                                )
+                                ya_aplicado = float(cur_check.fetchone()[0] or 0)
+                                if ya_aplicado >= pred_max:
+                                    cur_check.close()
+                                    conn_check.close()
+                                    return {
+                                        "ok": False,
+                                        "error": f"La cuota recomendada para {quimico} ({pred_max:.1f}g) ya fue completada al 100%. No se permite dosificar más para evitar sobredosificación en la piscina."
+                                    }
+                        cur_check.close()
+                    except Exception as ex:
+                        print(f"[Dosificador] Aviso al verificar cuota máxima: {ex}")
+                    finally:
+                        conn_check.close()
 
             self._detener_solicitado = False
             self.estado.update({

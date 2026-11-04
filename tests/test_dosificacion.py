@@ -49,7 +49,8 @@ def test_iniciar_y_detener_dosificacion():
         quimico="Cloro",
         cantidad_g=50.0,
         tipo="parcial",
-        descontar_inventario=False
+        descontar_inventario=False,
+        validar_cuota_maxima=False
     )
     assert res_inicio["ok"] is True
     assert res_inicio["calculo"]["litros_objetivo"] == 5.0
@@ -97,3 +98,31 @@ def test_api_endpoints_dosificacion():
     res_det = client.post("/api/dosificacion/detener", json={"motivo": "Test API"})
     assert res_det.status_code == 200
     assert res_det.json()["ok"] is True
+
+
+def test_aluminio_solo_en_dosificacion_final():
+    """El Sulfato de Aluminio solo debe permitirse en tipo='final', no en tipo='parcial'."""
+    # Intentar como parcial debe fallar
+    res_parcial = dosificacion_manager.iniciar(
+        quimico="Sulfato de Aluminio",
+        cantidad_g=100.0,
+        tipo="parcial",
+        descontar_inventario=False,
+        validar_cuota_maxima=False
+    )
+    assert res_parcial["ok"] is False
+    assert "solo se puede aplicar en la Dosificación Final" in res_parcial["error"]
+
+    # Intentar como final debe tener éxito
+    res_final = dosificacion_manager.iniciar(
+        quimico="Sulfato de Aluminio",
+        cantidad_g=100.0,
+        tipo="final",
+        descontar_inventario=False,
+        validar_cuota_maxima=False
+    )
+    assert res_final["ok"] is True
+    assert res_final["calculo"]["litros_objetivo"] == 1.5
+
+    # Limpiar estado
+    dosificacion_manager.detener("Fin prueba aluminio")
