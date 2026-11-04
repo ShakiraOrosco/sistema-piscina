@@ -234,6 +234,45 @@ def reporte_calidad_agua(
         if est_ph["fuera_rango"] > 0:
             evaluacion.append(f"El pH osciló fuera del margen 7.2-7.6 en {est_ph['fuera_rango']} ocasiones, influyendo en la eficacia desinfectante del cloro.")
 
+        # Agrupación por día para calcular el promedio diario de cada parámetro (RF-05)
+        agrupado_por_dia: Dict[str, Dict[str, List[float]]] = {}
+        for r in rows:
+            if not r["fecha_hora"]:
+                continue
+            fecha_str = r["fecha_hora"].strftime("%Y-%m-%d")
+            if fecha_str not in agrupado_por_dia:
+                agrupado_por_dia[fecha_str] = {"phs": [], "turbs": [], "temps": []}
+            if r["ph"] is not None:
+                agrupado_por_dia[fecha_str]["phs"].append(float(r["ph"]))
+            if r["turbidez"] is not None:
+                agrupado_por_dia[fecha_str]["turbs"].append(float(r["turbidez"]))
+            if r["temperatura"] is not None:
+                agrupado_por_dia[fecha_str]["temps"].append(float(r["temperatura"]))
+
+        promedios_diarios = []
+        meses_abr = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+        for fecha_str in sorted(agrupado_por_dia.keys()):
+            datos_dia = agrupado_por_dia[fecha_str]
+            p_prom = round(sum(datos_dia["phs"]) / len(datos_dia["phs"]), 2) if datos_dia["phs"] else None
+            t_prom = round(sum(datos_dia["turbs"]) / len(datos_dia["turbs"]), 2) if datos_dia["turbs"] else None
+            temp_prom = round(sum(datos_dia["temps"]) / len(datos_dia["temps"]), 2) if datos_dia["temps"] else None
+
+            try:
+                dt_dia = datetime.strptime(fecha_str, "%Y-%m-%d")
+                dia_label = f"{dt_dia.day:02d} {meses_abr[dt_dia.month - 1]}"
+            except Exception:
+                dia_label = fecha_str
+
+            promedios_diarios.append({
+                "fecha": fecha_str,
+                "label": dia_label,
+                "dia": dia_label,
+                "ph": p_prom,
+                "turbidez": t_prom,
+                "temperatura": temp_prom,
+                "total_lecturas": max(len(datos_dia["phs"]), len(datos_dia["turbs"]), len(datos_dia["temps"])),
+            })
+
         return {
             "rango": {
                 "tipo": tipo_rango,
@@ -251,6 +290,7 @@ def reporte_calidad_agua(
             },
             "alertas": alertas_resumen,
             "evaluacion_tecnica": evaluacion,
+            "promedios_diarios": promedios_diarios,
             "mediciones": detalle_cronologico,
         }
     finally:
@@ -574,6 +614,16 @@ def descargar_reporte_pdf(
         alignment=TA_CENTER,
     )
 
+    th_style = ParagraphStyle(
+        "TableHeader",
+        parent=body_style,
+        fontName="Helvetica-Bold",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.white,
+        alignment=TA_CENTER,
+    )
+
     alert_style = ParagraphStyle(
         "AlertaTexto",
         parent=body_style,
@@ -645,14 +695,14 @@ def descargar_reporte_pdf(
 
         stats_table_data = [
             [
-                Paragraph("<b>Parámetro</b>", center_style),
-                Paragraph("<b>Rango Normativo</b>", center_style),
-                Paragraph("<b>Promedio</b>", center_style),
-                Paragraph("<b>Mín.</b>", center_style),
-                Paragraph("<b>Máx.</b>", center_style),
-                Paragraph("<b>En Rango</b>", center_style),
-                Paragraph("<b>Fuera Rango</b>", center_style),
-                Paragraph("<b>% Cumplimiento</b>", center_style),
+                Paragraph("<b>Parámetro</b>", th_style),
+                Paragraph("<b>Rango Normativo</b>", th_style),
+                Paragraph("<b>Promedio</b>", th_style),
+                Paragraph("<b>Mín.</b>", th_style),
+                Paragraph("<b>Máx.</b>", th_style),
+                Paragraph("<b>En Rango</b>", th_style),
+                Paragraph("<b>Fuera Rango</b>", th_style),
+                Paragraph("<b>% Cumplimiento</b>", th_style),
             ],
             [
                 Paragraph("<b>pH del Agua</b>", body_style),
@@ -686,7 +736,7 @@ def descargar_reporte_pdf(
             ],
         ]
 
-        t_stats = Table(stats_table_data, colWidths=[1.4 * inch, 1.1 * inch, 0.7 * inch, 0.6 * inch, 0.6 * inch, 0.8 * inch, 0.9 * inch, 1.3 * inch])
+        t_stats = Table(stats_table_data, colWidths=[1.35 * inch, 1.1 * inch, 0.85 * inch, 0.55 * inch, 0.55 * inch, 0.8 * inch, 0.85 * inch, 1.35 * inch])
         t_stats.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -717,6 +767,43 @@ def descargar_reporte_pdf(
             story.append(Paragraph(f"• {ev}", body_style))
         story.append(Spacer(1, 8))
 
+        # Tabla de Promedios Diarios de cada Parámetro
+        promedios_diarios = data_calidad.get("promedios_diarios", [])
+        if promedios_diarios:
+            story.append(Paragraph("<b>Promedio Diario de Parámetros Fisicoquímicos:</b>", body_bold))
+            tab_prom_data = [
+                [
+                    Paragraph("<b>Día / Fecha</b>", th_style),
+                    Paragraph("<b>pH Promedio</b>", th_style),
+                    Paragraph("<b>Turbidez Promedio</b>", th_style),
+                    Paragraph("<b>Temp Promedio</b>", th_style),
+                    Paragraph("<b>N° Muestras</b>", th_style),
+                ]
+            ]
+            for p in promedios_diarios:
+                st_ph_color = "#15803D" if (p["ph"] is not None and 7.2 <= p["ph"] <= 7.6) else "#B91C1C"
+                st_turb_color = "#15803D" if (p["turbidez"] is not None and p["turbidez"] < 5.0) else "#B91C1C"
+                tab_prom_data.append([
+                    Paragraph(f"<b>{p['dia']}</b> ({p['fecha']})", center_style),
+                    Paragraph(f"<font color='{st_ph_color}'><b>{p['ph']:.2f}</b></font>" if p['ph'] is not None else "—", center_style),
+                    Paragraph(f"<font color='{st_turb_color}'><b>{p['turbidez']:.2f} NTU</b></font>" if p['turbidez'] is not None else "—", center_style),
+                    Paragraph(f"{p['temperatura']:.1f} °C" if p['temperatura'] is not None else "—", center_style),
+                    Paragraph(str(p.get("total_lecturas", 0)), center_style),
+                ])
+
+            t_prom = Table(tab_prom_data, colWidths=[2.2 * inch, 1.3 * inch, 1.5 * inch, 1.3 * inch, 1.1 * inch])
+            t_prom.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E293B")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]))
+            story.append(t_prom)
+            story.append(Spacer(1, 8))
+
         # Muestra representativa de lecturas (primeras 15 para no saturar PDF)
         story.append(Paragraph("<b>Registro Cronológico Reciente de Mediciones:</b>", body_bold))
         muestras = data_calidad["mediciones"]
@@ -729,11 +816,11 @@ def descargar_reporte_pdf(
 
         tab_meds_data = [
             [
-                Paragraph("<b>Fecha y Hora</b>", center_style),
-                Paragraph("<b>pH</b>", center_style),
-                Paragraph("<b>Turbidez (NTU)</b>", center_style),
-                Paragraph("<b>Temp (°C)</b>", center_style),
-                Paragraph("<b>Estado General</b>", center_style),
+                Paragraph("<b>Fecha y Hora</b>", th_style),
+                Paragraph("<b>pH</b>", th_style),
+                Paragraph("<b>Turbidez (NTU)</b>", th_style),
+                Paragraph("<b>Temp (°C)</b>", th_style),
+                Paragraph("<b>Estado General</b>", th_style),
             ]
         ]
         for m in muestras_tab:
@@ -771,11 +858,11 @@ def descargar_reporte_pdf(
 
         quim_table_data = [
             [
-                Paragraph("<b>Producto Químico</b>", center_style),
-                Paragraph("<b>Dosis Total (kg)</b>", center_style),
-                Paragraph("<b>Activaciones</b>", center_style),
-                Paragraph("<b>Precio Unit. (Bs/kg)</b>", center_style),
-                Paragraph("<b>Costo Total (Bs.)</b>", center_style),
+                Paragraph("<b>Producto Químico</b>", th_style),
+                Paragraph("<b>Dosis Total (kg)</b>", th_style),
+                Paragraph("<b>Activaciones</b>", th_style),
+                Paragraph("<b>Precio Unit. (Bs/kg)</b>", th_style),
+                Paragraph("<b>Costo Total (Bs.)</b>", th_style),
             ],
             [
                 Paragraph("Cloro Desinfectante (Pastillas / Granulado)", body_style),
@@ -827,11 +914,11 @@ def descargar_reporte_pdf(
         res_af = data_afluencia["resumen"]
         aflu_data = [
             [
-                Paragraph("<b>Total Bañistas</b>", center_style),
-                Paragraph("<b>Recaudación Total</b>", center_style),
-                Paragraph("<b>Promedio Diario</b>", center_style),
-                Paragraph("<b>Horario Pico</b>", center_style),
-                Paragraph("<b>Bañistas en Pico</b>", center_style),
+                Paragraph("<b>Total Bañistas</b>", th_style),
+                Paragraph("<b>Recaudación Total</b>", th_style),
+                Paragraph("<b>Promedio Diario</b>", th_style),
+                Paragraph("<b>Horario Pico</b>", th_style),
+                Paragraph("<b>Bañistas en Pico</b>", th_style),
             ],
             [
                 Paragraph(f"<b>{res_af['total_banistas']}</b> personas", center_style),

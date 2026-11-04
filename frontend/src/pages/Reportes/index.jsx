@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import api from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import {
@@ -124,6 +124,57 @@ export default function ReportesPage() {
       setExportingPdf(false)
     }
   }
+
+  // Promedios diarios de cada parámetro para las gráficas
+  const promediosDiarios = useMemo(() => {
+    if (!dataCalidad) return []
+    if (dataCalidad.promedios_diarios && dataCalidad.promedios_diarios.length > 0) {
+      return dataCalidad.promedios_diarios
+    }
+    // Fallback: calcular promedios diarios a partir de dataCalidad.mediciones
+    const meds = dataCalidad.mediciones || []
+    const agrupado = {}
+    const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+
+    meds.forEach((m) => {
+      const fecha = m.fecha || (m.fecha_hora ? m.fecha_hora.split(' ')[0] : 'N/A')
+      if (!agrupado[fecha]) {
+        agrupado[fecha] = { phs: [], turbs: [], temps: [] }
+      }
+      if (m.ph !== null && m.ph !== undefined) agrupado[fecha].phs.push(Number(m.ph))
+      if (m.turbidez !== null && m.turbidez !== undefined) agrupado[fecha].turbs.push(Number(m.turbidez))
+      if (m.temperatura !== null && m.temperatura !== undefined) agrupado[fecha].temps.push(Number(m.temperatura))
+    })
+
+    return Object.keys(agrupado)
+      .sort()
+      .map((f) => {
+        const item = agrupado[f]
+        const avg = (arr) => (arr.length ? Number((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(2)) : null)
+
+        let label = f
+        try {
+          const parts = f.split('-')
+          if (parts.length === 3) {
+            const d = parseInt(parts[2], 10)
+            const m = parseInt(parts[1], 10) - 1
+            label = `${d < 10 ? '0' + d : d} ${meses[m] || ''}`
+          }
+        } catch (e) {
+          label = f
+        }
+
+        return {
+          fecha: f,
+          label,
+          dia: label,
+          ph: avg(item.phs),
+          turbidez: avg(item.turbs),
+          temperatura: avg(item.temps),
+          total_lecturas: Math.max(item.phs.length, item.turbs.length, item.temps.length),
+        }
+      })
+  }, [dataCalidad])
 
   // Paginación de mediciones
   const mediciones = dataCalidad?.mediciones || []
@@ -400,14 +451,14 @@ export default function ReportesPage() {
               </div>
             </div>
 
-            {/* Gráficos Recharts de Evolución Temporal */}
+            {/* Gráficos Recharts de Evolución Temporal (Promedios Diarios) */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Gráfico pH */}
               <div className="bg-white dark:bg-[#24303F] p-6 rounded-2xl border border-slate-200 dark:border-[#313D4A] shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h3 className="font-bold text-slate-800 dark:text-white">Evolución del pH del Agua</h3>
-                    <p className="text-xs text-slate-400">Rango normativo óptimo entre 7.20 y 7.60</p>
+                    <h3 className="font-bold text-slate-800 dark:text-white">Promedio Diario de pH del Agua</h3>
+                    <p className="text-xs text-slate-400">Promedio del día · Rango normativo óptimo: 7.20 - 7.60</p>
                   </div>
                   <span className="text-xs font-semibold px-2 py-1 rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">
                     Ideal: 7.4
@@ -415,9 +466,9 @@ export default function ReportesPage() {
                 </div>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={dataCalidad.mediciones}>
+                    <LineChart data={promediosDiarios}>
                       <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                      <XAxis dataKey="hora" tick={{ fontSize: 10 }} />
+                      <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                       <YAxis domain={[6.5, 9.0]} tick={{ fontSize: 10 }} />
                       <Tooltip
                         contentStyle={{
@@ -427,10 +478,15 @@ export default function ReportesPage() {
                           color: '#fff',
                           fontSize: '11px',
                         }}
+                        formatter={(val) => [val !== null ? `${val} pH` : 'Sin datos', 'pH Promedio Diario']}
+                        labelFormatter={(lbl, payload) => {
+                          const item = payload?.[0]?.payload
+                          return item ? `${item.dia} (${item.fecha}) · ${item.total_lecturas} lecturas` : lbl
+                        }}
                       />
                       <ReferenceLine y={7.2} stroke="#EF4444" strokeDasharray="4 4" label={{ value: 'Mín 7.2', fill: '#EF4444', fontSize: 10 }} />
                       <ReferenceLine y={7.6} stroke="#EF4444" strokeDasharray="4 4" label={{ value: 'Máx 7.6', fill: '#EF4444', fontSize: 10 }} />
-                      <Line type="monotone" dataKey="ph" stroke="#2563EB" strokeWidth={2.5} dot={{ r: 2 }} activeDot={{ r: 5 }} name="pH Medido" />
+                      <Line type="monotone" dataKey="ph" stroke="#2563EB" strokeWidth={2.5} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6 }} name="pH Promedio Diario" />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -440,8 +496,8 @@ export default function ReportesPage() {
               <div className="bg-white dark:bg-[#24303F] p-6 rounded-2xl border border-slate-200 dark:border-[#313D4A] shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h3 className="font-bold text-slate-800 dark:text-white">Evolución de Turbidez (NTU)</h3>
-                    <p className="text-xs text-slate-400">Límite normativo máximo: 5.0 NTU</p>
+                    <h3 className="font-bold text-slate-800 dark:text-white">Promedio Diario de Turbidez (NTU)</h3>
+                    <p className="text-xs text-slate-400">Promedio del día · Límite normativo máximo: 5.0 NTU</p>
                   </div>
                   <span className="text-xs font-semibold px-2 py-1 rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300">
                     &lt; 5.0 NTU
@@ -449,9 +505,9 @@ export default function ReportesPage() {
                 </div>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={dataCalidad.mediciones}>
+                    <LineChart data={promediosDiarios}>
                       <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                      <XAxis dataKey="hora" tick={{ fontSize: 10 }} />
+                      <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                       <YAxis domain={[0, 15]} tick={{ fontSize: 10 }} />
                       <Tooltip
                         contentStyle={{
@@ -461,9 +517,14 @@ export default function ReportesPage() {
                           color: '#fff',
                           fontSize: '11px',
                         }}
+                        formatter={(val) => [val !== null ? `${val} NTU` : 'Sin datos', 'Turbidez Promedio Diario']}
+                        labelFormatter={(lbl, payload) => {
+                          const item = payload?.[0]?.payload
+                          return item ? `${item.dia} (${item.fecha}) · ${item.total_lecturas} lecturas` : lbl
+                        }}
                       />
                       <ReferenceLine y={5.0} stroke="#F59E0B" strokeDasharray="4 4" label={{ value: 'Límite 5.0', fill: '#F59E0B', fontSize: 10 }} />
-                      <Line type="monotone" dataKey="turbidez" stroke="#F59E0B" strokeWidth={2.5} dot={{ r: 2 }} activeDot={{ r: 5 }} name="Turbidez (NTU)" />
+                      <Line type="monotone" dataKey="turbidez" stroke="#F59E0B" strokeWidth={2.5} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6 }} name="Turbidez Promedio Diario" />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -473,8 +534,8 @@ export default function ReportesPage() {
               <div className="bg-white dark:bg-[#24303F] p-6 rounded-2xl border border-slate-200 dark:border-[#313D4A] shadow-sm lg:col-span-2">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h3 className="font-bold text-slate-800 dark:text-white">Evolución de Temperatura del Agua (°C)</h3>
-                    <p className="text-xs text-slate-400">Rango de confort recreativo entre 26.0 °C y 28.0 °C (Límites permitidos: 24.0 °C – 30.0 °C)</p>
+                    <h3 className="font-bold text-slate-800 dark:text-white">Promedio Diario de Temperatura del Agua (°C)</h3>
+                    <p className="text-xs text-slate-400">Promedio del día · Confort recreativo: 26.0 °C - 28.0 °C (Límites permitidos: 24.0 °C – 30.0 °C)</p>
                   </div>
                   <span className="text-xs font-semibold px-2 py-1 rounded-lg bg-teal-50 text-teal-600 dark:bg-teal-900/30 dark:text-teal-300">
                     Confort: 26°C - 28°C
@@ -482,9 +543,9 @@ export default function ReportesPage() {
                 </div>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={dataCalidad.mediciones}>
+                    <LineChart data={promediosDiarios}>
                       <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                      <XAxis dataKey={tipoRango === 'hoy' ? 'hora' : 'fecha_hora'} tick={{ fontSize: 10 }} />
+                      <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                       <YAxis domain={[20, 35]} tick={{ fontSize: 10 }} />
                       <Tooltip
                         contentStyle={{
@@ -494,10 +555,15 @@ export default function ReportesPage() {
                           color: '#fff',
                           fontSize: '11px',
                         }}
+                        formatter={(val) => [val !== null ? `${val} °C` : 'Sin datos', 'Temperatura Promedio Diario']}
+                        labelFormatter={(lbl, payload) => {
+                          const item = payload?.[0]?.payload
+                          return item ? `${item.dia} (${item.fecha}) · ${item.total_lecturas} lecturas` : lbl
+                        }}
                       />
                       <ReferenceLine y={24.0} stroke="#0D9488" strokeDasharray="4 4" label={{ value: 'Mín 24°C', fill: '#0D9488', fontSize: 10 }} />
                       <ReferenceLine y={30.0} stroke="#0D9488" strokeDasharray="4 4" label={{ value: 'Máx 30°C', fill: '#0D9488', fontSize: 10 }} />
-                      <Line type="monotone" dataKey="temperatura" stroke="#0D9488" strokeWidth={2.5} dot={{ r: 2 }} activeDot={{ r: 5 }} name="Temperatura (°C)" />
+                      <Line type="monotone" dataKey="temperatura" stroke="#0D9488" strokeWidth={2.5} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6 }} name="Temperatura Promedio Diario" />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>

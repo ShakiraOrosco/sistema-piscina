@@ -227,7 +227,7 @@ export default function PrediccionPanel({ prediccion, detalle, dosisAplicadas, o
                   </div>
 
                   <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500">
-                    <span>Regla: {q.nombre === 'Cloro' ? '100g = 10L' : '1000g = 15L'}</span>
+                    <span>Regla: {q.nombre === 'Cloro' ? '100g = 10L' : '1000g = 50L'}</span>
                     <span className="font-semibold text-slate-600 dark:text-slate-300">
                       {completado ? 'Completado' : q.solamenteFinal ? `${restante.toFixed(0)}g (Final) → ${calcularLitrosSolucion(q.nombre, restante).litros}L` : `${dosisSugerida.toFixed(1)}g → ${calculoPreview.litros}L`}
                     </span>

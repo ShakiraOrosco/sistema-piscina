@@ -8,7 +8,7 @@ Controla los actuadores físicos:
 Reglas de dosificación (Conversión Gramos -> Litros de solución):
 - Para Cloro: Cada 100 g equivalen a 10 Litros (0.10 L/g).
 - Para los demás químicos (Sulfato de Aluminio, Sulfato de Cobre, etc.):
-  Cada 1000 g equivalen a 15 Litros (0.015 L/g).
+  Cada 1000 g equivalen a 50 Litros (0.050 L/g).
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ PULSOS_POR_LITRO = 380.0
 
 # Factores de conversión
 FACTOR_CLORO_L_POR_G = 10.0 / 100.0       # 0.10 L/g (100g = 10L)
-FACTOR_OTROS_L_POR_G = 15.0 / 1000.0      # 0.015 L/g (1000g = 15L)
+FACTOR_OTROS_L_POR_G = 50.0 / 1000.0      # 0.050 L/g (1000g = 50L)
 
 
 class DosificacionManager:
@@ -107,8 +107,8 @@ class DosificacionManager:
             regla = "Cloro: 100g = 10L (0.10 L/g)"
             factor = FACTOR_CLORO_L_POR_G
         else:
-            litros = (float(cantidad_g) / 1000.0) * 15.0
-            regla = "Otros químicos: 1000g = 15L (0.015 L/g)"
+            litros = (float(cantidad_g) / 1000.0) * 50.0
+            regla = "Aluminio / Cobre: 1000g = 50L (0.050 L/g)"
             factor = FACTOR_OTROS_L_POR_G
 
         litros_redondeados = round(max(litros, 0.0), 3)

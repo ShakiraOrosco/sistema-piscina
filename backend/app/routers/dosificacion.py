@@ -6,7 +6,7 @@ Endpoints para:
 - Consultar estado y telemetría en tiempo real del sensor de flujo (Pin 27).
 - Calcular litros según la regla:
     * Cloro: 100g = 10L (0.10 L/g)
-    * Demás químicos: 1000g = 15L (0.015 L/g)
+    * Demás químicos: 1000g = 50L (0.050 L/g)
 """
 
 from typing import Any, Dict, Optional
@@ -57,7 +57,7 @@ def iniciar_dosificacion(payload: IniciarDosificacionPayload):
     
     Aplica el cálculo automático:
     - Cloro: cada 100g -> 10 Litros
-    - Demás: cada 1000g -> 15 Litros
+    - Demás: cada 1000g -> 50 Litros
     """
     res = dosificacion_manager.iniciar(
         quimico=payload.quimico,

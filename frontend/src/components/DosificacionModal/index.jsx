@@ -3,7 +3,7 @@ import { monitoringApi } from '../../services/api'
 
 // Factores de conversión:
 // Cloro: 100g = 10L (0.1 L/g)
-// Otros: 1000g = 15L (0.015 L/g)
+// Aluminio / Cobre: 1000g = 50L (0.050 L/g)
 export function calcularLitrosSolucion(quimico, cantidadGramos) {
   const q = (quimico || '').toLowerCase()
   const esCloro = q.includes('cloro')
@@ -19,12 +19,12 @@ export function calcularLitrosSolucion(quimico, cantidadGramos) {
       esCloro: true,
     }
   } else {
-    const litros = (g / 1000.0) * 15.0
+    const litros = (g / 1000.0) * 50.0
     return {
       litros: Number(litros.toFixed(3)),
       pulsos: Math.round(litros * 380),
-      regla: '1000g = 15L (0.015 L/g)',
-      factor: 0.015,
+      regla: '1000g = 50L (0.050 L/g)',
+      factor: 0.05,
       esCloro: false,
     }
   }
@@ -469,7 +469,7 @@ export default function DosificacionModal({
                     </span>
                   ) : (
                     <span>
-                      Para <strong>{quimico}</strong>: ({cantidadGramos}g / 1000) × 15 = <strong>{calculo.litros} Litros</strong>
+                      Para <strong>{quimico}</strong>: ({cantidadGramos}g / 1000) × 50 = <strong>{calculo.litros} Litros</strong>
                     </span>
                   )}
                 </div>
