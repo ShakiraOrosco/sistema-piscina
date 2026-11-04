@@ -28,6 +28,7 @@ from .routers.caja import router as caja_router
 from .routers.inventario import router as inventario_router
 from .routers.auditoria import router as auditoria_router
 from .routers.reportes import router as reportes_router
+from .routers.dosificacion import router as dosificacion_router
 
 try:
     from detector_camara import start_camera_service_background, stop_camera_service_background
@@ -78,3 +79,4 @@ app.include_router(caja_router)
 app.include_router(inventario_router)
 app.include_router(auditoria_router)
 app.include_router(reportes_router)
+app.include_router(dosificacion_router)

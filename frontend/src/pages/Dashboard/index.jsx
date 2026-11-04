@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { monitoringApi } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import PrediccionPanel from '../../components/PrediccionPanel'
+import DosificacionMonitor from '../../components/DosificacionMonitor'
+import { calcularLitrosSolucion } from '../../components/DosificacionModal'
 import ReportesModal from '../../components/ReportesModal'
 import {
   ResponsiveContainer,
@@ -191,6 +193,9 @@ export default function Dashboard() {
 
   return (
     <>
+      {/* BANNER EN VIVO DE DOSIFICACIÓN (BOMBA Y ELECTROVÁLVULA) */}
+      <DosificacionMonitor onCambioEstado={() => loadSensorData()} />
+
       {/* TARJETAS INTERACTIVAS */}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         
@@ -354,6 +359,7 @@ export default function Dashboard() {
         detalle={sensorData?.prediccion_detalle}
         dosisAplicadas={sensorData?.dosis_aplicadas}
         onPredecir={predecirAhora}
+        onDosificar={loadSensorData}
       />
 
       {/* BOTONES DE SELECCIÓN DE SENSOR */}
@@ -533,27 +539,31 @@ export default function Dashboard() {
                     </p>
                   </div>
                   
-                  {esAccion && (
-                    <button
-                      onClick={async () => {
-                        try {
-                          await monitoringApi.post('/api/dosificacion_parcial', { 
-                            quimico: alert.quimico, 
-                            cantidad_g: alert.cantidad 
-                          });
-                          await loadSensorData();
-                        } catch (e) {
-                          if (showError) showError('Error al registrar la micro-dosis');
-                        }
-                      }}
-                      className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition-all hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                    >
-                      <span>Aplicar Dosis ({alert.cantidad}g)</span>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    </button>
-                  )}
+                  {esAccion && (() => {
+                    const infoLitros = calcularLitrosSolucion(alert.quimico, alert.cantidad)
+                    return (
+                      <button
+                        onClick={async () => {
+                          try {
+                            await monitoringApi.post('/api/dosificacion/iniciar', { 
+                              quimico: alert.quimico, 
+                              cantidad_g: alert.cantidad,
+                              tipo: 'parcial'
+                            });
+                            await loadSensorData();
+                          } catch (e) {
+                            if (showError) showError('Error al activar la dosificación');
+                          }
+                        }}
+                        className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                      >
+                        <span>Activar Dosis ({alert.cantidad}g → {infoLitros.litros} L)</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                    )
+                  })()}
                 </div>
               );
             }) : (

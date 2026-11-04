@@ -396,9 +396,7 @@ export default function ReportesPage() {
                   <span className="text-4xl font-black">{dataCalidad.indice_global_cumplimiento}%</span>
                   <span className="text-xs text-blue-100 font-medium">conforme a norma</span>
                 </div>
-                <p className="mt-3 text-xs text-blue-100 leading-tight">
-                  Evaluado con criterios de Ley Municipal N° 020 y Real Decreto 742/2013.
-                </p>
+                
               </div>
             </div>
 

@@ -29,49 +29,47 @@ def run():
         print(f"Jornada activa ID: {id_jornada} para la fecha: {today}")
 
         with conn.cursor() as cur:
-            # Limpiar mediciones, aforo_camara, prediccion y resumen previo para hoy
+            # Limpiar mediciones, aforo_camara, prediccion, resumen y aforo manual previo para hoy
             cur.execute("DELETE FROM medicion WHERE id_jornada = %s", (id_jornada,))
             cur.execute("DELETE FROM aforo_camara WHERE id_jornada = %s", (id_jornada,))
             cur.execute("DELETE FROM prediccion WHERE id_jornada = %s", (id_jornada,))
             cur.execute("DELETE FROM resumen_diario WHERE id_jornada = %s", (id_jornada,))
+            cur.execute("DELETE FROM aforo_manual WHERE id_jornada = %s", (id_jornada,))
             conn.commit()
-            print("Datos previos de mediciones de la jornada limpiados exitosamente.")
+            print("Datos previos de la jornada limpiados exitosamente.")
 
-        # Verificar si hay aforo manual para hoy, si no hay, agregar taquilla coherente
+        # Insertar registros de taquilla (aforo manual) hasta las 6:00 PM
+        print("Insertando registros de taquilla (aforo manual) hasta las 18:00 (6:00 PM)...")
+        ventas_taquilla = [
+            (8,  15, 2,  3,  "Apertura temprana"),
+            (9,  10, 4,  8,  "Entrada matutina familias"),
+            (10, 5,  8,  14, "Grupo escolar / recreativo"),
+            (11, 15, 12, 23, "Pico de mañana"),
+            (12, 20, 10, 20, "Entradas mediodía"),
+            (13, 30, 8,  17, "Turno tarde"),
+            (14, 15, 8,  20, "Pico vespertino"),
+            (15, 10, 6,  12, "Tarde familiar"),
+            (16, 5,  4,  6,  "Tarde recreativa"),
+            (17, 15, 2,  3,  "Turno noche / vespertino"),
+            (18, 0,  1,  2,  "Ingreso 18:00 (6:00 PM)"),
+        ]
         with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM aforo_manual WHERE id_jornada = %s", (id_jornada,))
-            count_manual = cur.fetchone()[0]
-            if count_manual == 0:
-                print("Insertando registros de taquilla (aforo manual)...")
-                ventas_taquilla = [
-                    (8,  15, 2,  3,  "Apertura temprana"),
-                    (9,  10, 4,  8,  "Entrada matutina familias"),
-                    (10, 5,  8,  14, "Grupo escolar / recreativo"),
-                    (11, 15, 12, 23, "Pico de mañana"),
-                    (12, 20, 10, 20, "Entradas mediodía"),
-                    (13, 30, 8,  17, "Turno tarde"),
-                    (14, 15, 8,  20, "Pico vespertino"),
-                    (15, 10, 6,  12, "Tarde familiar"),
-                    (16, 5,  4,  6,  "Tarde recreativa"),
-                    (17, 15, 2,  3,  "Turno noche / vespertino"),
-                    (18, 5,  1,  2,  "Último ingreso antes del cierre"),
-                ]
-                for h, m, t15, t20, obs in ventas_taquilla:
-                    dt = datetime.combine(today, datetime.min.time()).replace(hour=h, minute=m)
-                    cur.execute(
-                        """
-                        INSERT INTO aforo_manual (
-                            id_jornada, id_usuario, hora_entrada,
-                            cantidad_tarifa_15, cantidad_tarifa_20,
-                            observaciones
-                        ) VALUES (%s, 1, %s, %s, %s, %s)
-                        """,
-                        (id_jornada, dt, t15, t20, obs)
-                    )
-                conn.commit()
-                print(f"[OK] {len(ventas_taquilla)} registros de taquilla insertados.")
+            for h, m, t15, t20, obs in ventas_taquilla:
+                dt = datetime.combine(today, datetime.min.time()).replace(hour=h, minute=m)
+                cur.execute(
+                    """
+                    INSERT INTO aforo_manual (
+                        id_jornada, id_usuario, hora_entrada,
+                        cantidad_tarifa_15, cantidad_tarifa_20,
+                        observaciones
+                    ) VALUES (%s, 1, %s, %s, %s, %s)
+                    """,
+                    (id_jornada, dt, t15, t20, obs)
+                )
+            conn.commit()
+            print(f"[OK] {len(ventas_taquilla)} registros de taquilla insertados.")
 
-        # Mediciones horarias desde las 08:00 hasta las 20:00 (8:00 PM)
+        # Mediciones horarias desde las 08:00 hasta las 18:00 (6:00 PM)
         lecturas = [
             # hora, ph, turbidez, temperatura, banistas_camara
             (8,  7.22, 1.15, 26.4, 5),   # 08:00
@@ -85,11 +83,9 @@ def run():
             (16, 7.44, 3.50, 30.4, 34),  # 16:00
             (17, 7.39, 2.95, 29.3, 12),  # 17:00
             (18, 7.35, 2.40, 28.4, 8),   # 18:00 (6:00 PM)
-            (19, 7.31, 1.95, 27.6, 3),   # 19:00 (7:00 PM)
-            (20, 7.28, 1.65, 26.9, 0),   # 20:00 (8:00 PM - Cierre)
         ]
 
-        print(f"\nInsertando {len(lecturas)} mediciones horarias (08:00 - 20:00 / 8:00 PM)...")
+        print(f"\nInsertando {len(lecturas)} mediciones horarias (08:00 - 18:00 / 6:00 PM)...")
         with conn.cursor() as cur:
             for h, ph, turb, temp, pers in lecturas:
                 fecha_hora = datetime.combine(today, datetime.min.time()).replace(hour=h, minute=0, second=0)
@@ -131,7 +127,7 @@ def run():
             print(f"Advertencia en predicción: {err}")
 
         print("\n" + "="*60)
-        print("[EXITO] Se insertaron correctamente todas las mediciones de 08:00 a 20:00 (8:00 PM) en la base de datos.")
+        print("[EXITO] Se insertaron correctamente todas las mediciones de 08:00 a 18:00 (6:00 PM) en la base de datos.")
         print("="*60)
 
     except Exception as e:
