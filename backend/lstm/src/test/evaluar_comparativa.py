@@ -9,7 +9,8 @@ import torch
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
-from lstm.src.preprocesamiento.preprocesador import (
+try:
+    from backend.lstm.src.preprocesamiento.preprocesador import (
     cargar_datos_csv,
     construir_features_y_targets,
     preprocesar_datos_lstm,
@@ -17,7 +18,17 @@ from lstm.src.preprocesamiento.preprocesador import (
     dividir_datos,
     MODELS_DIR,
 )
-from lstm.src.training.train_lstm import LSTMRegressor
+    from backend.lstm.src.training.train_lstm import LSTMRegressor
+except ModuleNotFoundError:
+    from lstm.src.preprocesamiento.preprocesador import (
+        cargar_datos_csv,
+        construir_features_y_targets,
+        preprocesar_datos_lstm,
+        preprocesar_datos_xgboost,
+        dividir_datos,
+        MODELS_DIR,
+    )
+    from lstm.src.training.train_lstm import LSTMRegressor
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 REPORTS_DIR = os.path.join(BASE_DIR, "reports")

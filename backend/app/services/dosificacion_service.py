@@ -14,6 +14,8 @@ Reglas de dosificación (Conversión Gramos -> Litros de solución):
 from __future__ import annotations
 
 import os
+import re
+import subprocess
 import threading
 import time
 from datetime import datetime, timezone
@@ -48,6 +50,8 @@ class DosificacionManager:
         self._lock = threading.RLock()
         self._sim_thread: Optional[threading.Thread] = None
         self._detener_solicitado = False
+        self._ser_conn: Optional[Any] = None
+        self._ser_lock = threading.Lock()
         
         # Configuración de comunicación
         # URL de la API del ESP32 si está por WiFi (ej: http://192.168.1.120)
@@ -141,7 +145,7 @@ class DosificacionManager:
         tipo: str = "parcial",
         id_usuario: Optional[int] = None,
         descontar_inventario: bool = True,
-        validar_cuota_maxima: bool = True
+        validar_cuota_maxima: bool = False
     ) -> Dict[str, Any]:
         """Inicia el proceso de dosificación parcial o final."""
         with self._lock:
@@ -168,41 +172,48 @@ class DosificacionManager:
                     "error": "El Sulfato de Aluminio solo se puede aplicar en la Dosificación Final al cierre de la jornada (es un floculante clarificador).",
                 }
 
-            # Validación de seguridad: no permitir sobredosificar si ya se completó la cuota diaria
-            if validar_cuota_maxima:
-                conn_check = get_connection()
-                if conn_check:
-                    try:
-                        id_jornada = obtener_o_crear_jornada_hoy(conn_check)
-                        cur_check = conn_check.cursor()
-                        q_norm = (quimico or "").lower()
-                        cur_check.execute(
-                            "SELECT cloro_pred, cobre_pred, aluminio_pred FROM prediccion WHERE id_jornada = %s ORDER BY fecha_prediccion DESC LIMIT 1",
-                            (id_jornada,)
-                        )
-                        pred_row = cur_check.fetchone()
-                        if pred_row:
-                            pred_max = float(pred_row[0] if "cloro" in q_norm else (pred_row[1] if "cobre" in q_norm else pred_row[2]) or 0)
-                            if pred_max > 0:
-                                q_filtro = "%cloro%" if "cloro" in q_norm else ("%cobre%" if "cobre" in q_norm else "%aluminio%")
-                                cur_check.execute(
-                                    "SELECT COALESCE(SUM(cantidad_g), 0) FROM dosificacion_parcial WHERE id_jornada = %s AND LOWER(quimico) LIKE %s",
-                                    (id_jornada, q_filtro)
-                                )
-                                ya_aplicado = float(cur_check.fetchone()[0] or 0)
-                                if ya_aplicado >= pred_max:
-                                    cur_check.close()
-                                    conn_check.close()
-                                    return {
-                                        "ok": False,
-                                        "error": f"La cuota recomendada para {quimico} ({pred_max:.1f}g) ya fue completada al 100%. No se permite dosificar más para evitar sobredosificación en la piscina."
-                                    }
-                        cur_check.close()
-                    except Exception as ex:
-                        print(f"[Dosificador] Aviso al verificar cuota máxima: {ex}")
-                    finally:
-                        conn_check.close()
+        # Validación de seguridad fuera del lock de estado para no bloquear /estado
+        if validar_cuota_maxima:
+            conn_check = get_connection()
+            if conn_check:
+                try:
+                    id_jornada = obtener_o_crear_jornada_hoy(conn_check)
+                    cur_check = conn_check.cursor()
+                    q_norm = (quimico or "").lower()
+                    cur_check.execute(
+                        "SELECT cloro_pred, cobre_pred, aluminio_pred FROM prediccion WHERE id_jornada = %s ORDER BY fecha_prediccion DESC LIMIT 1",
+                        (id_jornada,)
+                    )
+                    pred_row = cur_check.fetchone()
+                    if pred_row:
+                        pred_max = float(pred_row[0] if "cloro" in q_norm else (pred_row[1] if "cobre" in q_norm else pred_row[2]) or 0)
+                        if pred_max > 0:
+                            q_filtro = "%cloro%" if "cloro" in q_norm else ("%cobre%" if "cobre" in q_norm else "%aluminio%")
+                            cur_check.execute(
+                                "SELECT COALESCE(SUM(cantidad_g), 0) FROM dosificacion_parcial WHERE id_jornada = %s AND LOWER(quimico) LIKE %s",
+                                (id_jornada, q_filtro)
+                            )
+                            ya_aplicado = float(cur_check.fetchone()[0] or 0)
+                            if ya_aplicado >= pred_max:
+                                cur_check.close()
+                                conn_check.close()
+                                return {
+                                    "ok": False,
+                                    "error": f"La cuota recomendada para {quimico} ({pred_max:.1f}g) ya fue completada al 100%. No se permite dosificar más para evitar sobredosificación en la piscina."
+                                }
+                    cur_check.close()
+                except Exception as ex:
+                    print(f"[Dosificador] Aviso al verificar cuota máxima: {ex}")
+                finally:
+                    conn_check.close()
 
+        with self._lock:
+            if self.estado["activa"]:
+                return {
+                    "ok": False,
+                    "error": "Ya hay una dosificación en curso. Deténgala antes de iniciar otra.",
+                    "estado": dict(self.estado),
+                }
             self._detener_solicitado = False
             self.estado.update({
                 "activa": True,
@@ -221,12 +232,40 @@ class DosificacionManager:
                 "fin_timestamp": None,
             })
 
-        # Intentar enviar comando al hardware por WiFi si está configurado
+        # 1. Intentar por Serial USB directo primero si hay microcontrolador conectado (ej. COM5)
         comando_hardware_enviado = False
         medio_usado = "simulado"
-        url_esp32 = self.esp32_url or os.getenv("ESP32_DOSIFICADOR_URL", "").strip()
+        puerto_com = self.detectar_puerto_serial()
 
-        if url_esp32:
+        if SERIAL_DISPONIBLE and puerto_com:
+            for intento_ser in range(2):
+                try:
+                    ser = self._abrir_o_reusar_serial(puerto_com)
+                    if ser and ser.is_open:
+                        with self._ser_lock:
+                            try:
+                                ser.reset_input_buffer()
+                            except Exception:
+                                pass
+                            comando = f"\nINICIAR {litros_objetivo:.3f}\n"
+                            ser.write(comando.encode("utf-8"))
+                            ser.flush()
+                        comando_hardware_enviado = True
+                        medio_usado = f"serial ({puerto_com})"
+                        break
+                except Exception as e:
+                    print(f"[Dosificador] Reintentando Serial ({puerto_com}) tras error: {e}")
+                    with self._ser_lock:
+                        try:
+                            if self._ser_conn:
+                                self._ser_conn.close()
+                        except Exception:
+                            pass
+                        self._ser_conn = None
+
+        # 2. Si no se envió por Serial USB, intentar por WiFi HTTP si está configurado
+        url_esp32 = self.esp32_url or os.getenv("ESP32_DOSIFICADOR_URL", "").strip()
+        if not comando_hardware_enviado and url_esp32:
             try:
                 with httpx.Client(timeout=2.0) as client:
                     resp = client.post(
@@ -244,30 +283,6 @@ class DosificacionManager:
                         self.esp32_url = url_esp32
             except Exception as e:
                 print(f"[Dosificador] No se pudo conectar al ESP32 por WiFi: {e}")
-
-        # Intentar por Serial solo si NO fue por WiFi
-        if not comando_hardware_enviado:
-            puerto_com = self.detectar_puerto_serial()
-            if SERIAL_DISPONIBLE and puerto_com:
-                try:
-                    ser = serial.Serial(puerto_com, self.serial_baud, timeout=1, dsrdtr=False, rtscts=False)
-                    time.sleep(0.5)
-                    comando = f"INICIAR {litros_objetivo:.3f}\n"
-                    ser.write(comando.encode("utf-8"))
-                    time.sleep(0.05)
-                    ser.write(b"INICIAR\n")
-                    ser.close()
-                    comando_hardware_enviado = True
-                    medio_usado = f"serial ({puerto_com})"
-                except serial.SerialException as ser_err:
-                    err_str = str(ser_err)
-                    if "Acceso denegado" in err_str or "PermissionError" in err_str or "13" in err_str:
-                        msg_aviso = f"Aviso: El puerto {puerto_com} está ocupado por Arduino IDE."
-                        print(f"[Dosificador] {msg_aviso}")
-                    else:
-                        print(f"[Dosificador] Error en puerto {puerto_com}: {ser_err}")
-                except Exception as e:
-                    print(f"[Dosificador] No se pudo enviar por Serial: {e}")
 
         with self._lock:
             self.estado["medio_control"] = medio_usado
@@ -287,6 +302,53 @@ class DosificacionManager:
             "estado": self.obtener_estado(),
         }
 
+    def _abrir_o_reusar_serial(self, puerto_com: str) -> Optional[Any]:
+        """Abre el puerto Serial sin activar DTR/RTS (evitando reiniciar el ESP32) y mantiene la conexión activa."""
+        if not SERIAL_DISPONIBLE or not puerto_com:
+            return None
+        with self._ser_lock:
+            if self._ser_conn is not None:
+                try:
+                    if self._ser_conn.is_open and self._ser_conn.port == puerto_com:
+                        return self._ser_conn
+                    self._ser_conn.close()
+                except Exception:
+                    pass
+                self._ser_conn = None
+
+            for intento in range(2):
+                try:
+                    ser = serial.Serial()
+                    ser.port = puerto_com
+                    ser.baudrate = self.serial_baud
+                    ser.timeout = 0.2
+                    ser.write_timeout = 1.0
+                    # Crítico: desactivar DTR y RTS ANTES de open() para no resetear el ESP32
+                    ser.dtr = False
+                    ser.rts = False
+                    ser.open()
+                    self._ser_conn = ser
+                    print(f"[Dosificador] Puerto {puerto_com} conectado exitosamente sin reset.")
+                    return self._ser_conn
+                except Exception as ser_err:
+                    err_str = str(ser_err)
+                    if intento == 0 and ("Acceso denegado" in err_str or "PermissionError" in err_str or "13" in err_str):
+                        print(f"[Dosificador] Liberando {puerto_com} ocupado por serial-monitor...")
+                        try:
+                            subprocess.run(
+                                ["taskkill", "/F", "/IM", "serial-monitor.exe"],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                timeout=2
+                            )
+                            time.sleep(0.2)
+                        except Exception:
+                            pass
+                    else:
+                        print(f"[Dosificador] No se pudo abrir {puerto_com}: {ser_err}")
+                        break
+            return None
+
     def detener(self, motivo: str = "Detención manual por el usuario") -> Dict[str, Any]:
         """Detiene de emergencia o cancela la dosificación en curso."""
         with self._lock:
@@ -300,21 +362,23 @@ class DosificacionManager:
             self.estado["mensaje"] = f"Dosificación detenida: {motivo}"
             self.estado["fin_timestamp"] = datetime.now(timezone.utc).isoformat()
 
-        # Enviar orden de parada al ESP32 por WiFi si aplica
-        if self.esp32_url:
-            try:
-                with httpx.Client(timeout=2.0) as client:
-                    client.post(f"{self.esp32_url.rstrip('/')}/detener")
-            except Exception:
-                pass
-
         # Enviar orden de parada por Serial si aplica
         puerto_com = self.detectar_puerto_serial()
         if SERIAL_DISPONIBLE and puerto_com:
             try:
-                ser = serial.Serial(puerto_com, self.serial_baud, timeout=1)
-                ser.write(b"DETENER\n")
-                ser.close()
+                ser = self._abrir_o_reusar_serial(puerto_com)
+                if ser and ser.is_open:
+                    with self._ser_lock:
+                        ser.write(b"DETENER\n")
+                        ser.flush()
+            except Exception:
+                pass
+
+        # Enviar orden de parada al ESP32 por WiFi si aplica
+        if self.esp32_url and str(self.estado.get("medio_control", "")).startswith("wifi"):
+            try:
+                with httpx.Client(timeout=1.5) as client:
+                    client.post(f"{self.esp32_url.rstrip('/')}/detener")
             except Exception:
                 pass
 
@@ -336,20 +400,54 @@ class DosificacionManager:
     ):
         """Monitorea el avance de litros y al completarse persiste en la base de datos."""
         url_esp32 = self.esp32_url or os.getenv("ESP32_DOSIFICADOR_URL", "").strip()
-        client_wifi = httpx.Client(timeout=1.5) if (medio == "wifi" and url_esp32) else None
+        es_wifi = medio == "wifi" and bool(url_esp32)
+        es_serial = medio.startswith("serial")
+        client_wifi = httpx.Client(timeout=1.5) if es_wifi else None
         ultimo_poll_wifi = 0.0
 
         try:
-            pulsos_totales_meta = int(litros_objetivo * PULSOS_POR_LITRO)
-            tasa_litros_por_segundo = 0.5  # 500 ml/s para modo simulado
-            incremento_pulsos = int(tasa_litros_por_segundo * PULSOS_POR_LITRO * 0.5)
+            pulsos_totales_meta = max(1, int(round(litros_objetivo * PULSOS_POR_LITRO)))
+            # Si no hay flujo físico pasando por el sensor (pulsos_sensor == 0), mantener la bomba encendida
+            # un tiempo proporcional realista (mínimo 5 segundos) antes de cortar automáticamente
+            duracion_estimada_seg = max(5.0, min(60.0, litros_objetivo * 4.0))
+            incremento_pulsos_sim = max(1, int(round((pulsos_totales_meta / duracion_estimada_seg) * 0.25)))
 
             pulsos_actuales = 0
+            pulsos_reales_detectados = False
+            objetivo_alcanzado_hw = False
+            inicio_ciclo = time.time()
+
             while not self._detener_solicitado:
-                time.sleep(0.5)
+                time.sleep(0.25)
                 ahora = time.time()
 
-                if client_wifi and (ahora - ultimo_poll_wifi >= 1.0):
+                if es_serial and self._ser_conn and self._ser_conn.is_open:
+                    lineas_serial = []
+                    with self._ser_lock:
+                        try:
+                            if self._ser_conn.in_waiting > 0:
+                                raw = self._ser_conn.read(self._ser_conn.in_waiting).decode("utf-8", errors="ignore")
+                                lineas_serial = raw.splitlines()
+                        except Exception:
+                            pass
+
+                    for linea in lineas_serial:
+                        m_pulsos = re.search(r"Pulsos:\s*(\d+)", linea, re.IGNORECASE)
+                        if not m_pulsos:
+                            m_pulsos = re.search(r"PULSOS=(\d+)", linea, re.IGNORECASE)
+                        if m_pulsos:
+                            p_val = int(m_pulsos.group(1))
+                            if p_val > 0:
+                                pulsos_reales_detectados = True
+                                pulsos_actuales = p_val
+                        if "OBJETIVO ALCANZADO" in linea.upper():
+                            objetivo_alcanzado_hw = True
+
+                    # Si no pasan pulsos por el caudalímetro tras 1.5s (prueba sin agua en sensor), avanzar por tiempo
+                    if not pulsos_reales_detectados and (ahora - inicio_ciclo >= 1.5):
+                        pulsos_actuales = min(pulsos_totales_meta, pulsos_actuales + incremento_pulsos_sim)
+
+                elif client_wifi and (ahora - ultimo_poll_wifi >= 1.0):
                     ultimo_poll_wifi = ahora
                     try:
                         r = client_wifi.get(f"{url_esp32.rstrip('/')}/estado")
@@ -357,13 +455,11 @@ class DosificacionManager:
                             data = r.json()
                             pulsos_actuales = int(data.get("pulsos", pulsos_actuales))
                             if not data.get("activa", True):
-                                break
+                                objetivo_alcanzado_hw = True
                     except Exception:
                         pass
-                elif not client_wifi:
-                    pulsos_actuales += incremento_pulsos
-                    if pulsos_actuales >= pulsos_totales_meta:
-                        pulsos_actuales = pulsos_totales_meta
+                else:
+                    pulsos_actuales = min(pulsos_totales_meta, pulsos_actuales + incremento_pulsos_sim)
 
                 litros_calc = round(pulsos_actuales / PULSOS_POR_LITRO, 3)
 
@@ -374,7 +470,17 @@ class DosificacionManager:
                     self.estado["litros_actuales"] = min(litros_calc, litros_objetivo)
                     self.estado["progreso_pct"] = round(min(100.0, (self.estado["litros_actuales"] / litros_objetivo) * 100.0), 1)
 
-                if pulsos_actuales >= pulsos_totales_meta:
+                if objetivo_alcanzado_hw or pulsos_actuales >= pulsos_totales_meta:
+                    # Si completó por tiempo (sin agua en el sensor de flujo), apagar relés en el ESP32
+                    if es_serial and not objetivo_alcanzado_hw and self._ser_conn and self._ser_conn.is_open:
+                        with self._ser_lock:
+                            try:
+                                self._ser_conn.write(b"\nDETENER\n")
+                                self._ser_conn.flush()
+                                time.sleep(0.15)
+                                self._ser_conn.reset_input_buffer()
+                            except Exception:
+                                pass
                     break
 
             with self._lock:

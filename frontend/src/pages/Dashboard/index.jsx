@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { monitoringApi } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
 import PrediccionPanel from '../../components/PrediccionPanel'
@@ -25,8 +25,11 @@ export default function Dashboard() {
   const [jornadaDisponible, setJornadaDisponible] = useState(true)
   const [selectedSensor, setSelectedSensor] = useState('ph') // 'ph' | 'turbidez' | 'temperatura' | 'todos'
   const [showReportModal, setShowReportModal] = useState(false)
+  const isFetchingRef = useRef(false)
 
-  const loadSensorData = async () => {
+  const loadSensorData = async (force = false) => {
+    if (isFetchingRef.current && !force) return
+    isFetchingRef.current = true
     setLoadingSensors(true)
     try {
       const [{ data: state }, { data: alerts }] = await Promise.all([
@@ -44,12 +47,17 @@ export default function Dashboard() {
       }
     } finally {
       setLoadingSensors(false)
+      isFetchingRef.current = false
     }
   }
 
   useEffect(() => {
-    loadSensorData()
-    const intervalId = window.setInterval(loadSensorData, 10000)
+    loadSensorData(true)
+    const intervalId = window.setInterval(() => {
+      if (!document.hidden) {
+        loadSensorData(false)
+      }
+    }, 12000)
     return () => window.clearInterval(intervalId)
   }, [])
 

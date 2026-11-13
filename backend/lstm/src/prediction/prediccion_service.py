@@ -5,7 +5,10 @@ from typing import Any, Dict, List, Optional
 import joblib
 import numpy as np
 
-from lstm.src.prediction.pronostico_sensores import estimar_valor, valor_valido
+try:
+    from backend.lstm.src.prediction.pronostico_sensores import estimar_valor, valor_valido
+except ModuleNotFoundError:
+    from lstm.src.prediction.pronostico_sensores import estimar_valor, valor_valido
 
 VARIABLES_SENSOR = ("ph", "turbidez", "temperatura")
 
@@ -32,7 +35,10 @@ def _cargar_artefactos():
     if _modelo_cache is None:
         # Imports diferidos: así `seleccionar_franjas` se puede usar/probar sin torch.
         import torch
-        from lstm.src.training.train_lstm import LSTMRegressor
+        try:
+            from backend.lstm.src.training.train_lstm import LSTMRegressor
+        except ModuleNotFoundError:
+            from lstm.src.training.train_lstm import LSTMRegressor
 
         lstm_path = os.path.join(MODELS_DIR, "lstm_piscina_model.pth")
         scaler_x_path = os.path.join(MODELS_DIR, "scaler_x.joblib")
@@ -248,7 +254,10 @@ def predecir_cierre_dia(
     franjas = seleccionar_franjas(mediciones_parciales, aforos_camara, aforos_manual, perfiles=perfiles)
     # Orden de features idéntico al entrenamiento: [pH, turbidez, temperatura, bañistas]
     # Orden de 7 features fisicoquímicos idéntico al entrenamiento:
-    from lstm.src.preprocesamiento.preprocesador import extraer_features_paso
+    try:
+        from backend.lstm.src.preprocesamiento.preprocesador import extraer_features_paso
+    except ModuleNotFoundError:
+        from lstm.src.preprocesamiento.preprocesador import extraer_features_paso
     ph_inicial = float(franjas[0]["ph"]) if franjas else 7.2
     seq = [
         extraer_features_paso(

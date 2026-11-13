@@ -5,16 +5,29 @@ export default function DosificacionMonitor({ onCambioEstado = null }) {
   const [estado, setEstado] = useState(null)
   const [deteniendo, setDeteniendo] = useState(false)
   const timerRef = useRef(null)
+  const prevModoRef = useRef(null)
+  const inFlightRef = useRef(false)
 
   const consultarEstado = async () => {
+    if (inFlightRef.current) return
+    inFlightRef.current = true
     try {
       const res = await monitoringApi.get('/api/dosificacion/estado')
-      setEstado(res.data)
-      if (onCambioEstado) {
-        onCambioEstado(res.data)
+      const data = res.data
+      setEstado(data)
+      // Notificar al Dashboard únicamente cuando cambia el modo (ej. al terminar la dosificación)
+      if (prevModoRef.current !== null && prevModoRef.current !== data?.modo) {
+        if (data?.modo === 'completado' || data?.modo === 'detenido') {
+          if (onCambioEstado) {
+            onCambioEstado(data)
+          }
+        }
       }
+      prevModoRef.current = data?.modo ?? null
     } catch {
       // Ignorar errores de red transitorios en polling
+    } finally {
+      inFlightRef.current = false
     }
   }
 

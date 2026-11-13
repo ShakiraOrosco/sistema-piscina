@@ -5,13 +5,22 @@ import numpy as np
 import xgboost as xgb
 from sklearn.multioutput import MultiOutputRegressor
 
-from lstm.src.preprocesamiento.preprocesador import (
-    cargar_datos_csv,
-    construir_features_y_targets,
-    preprocesar_datos_xgboost,
-    dividir_datos,
-    MODELS_DIR,
-)
+try:
+    from backend.lstm.src.preprocesamiento.preprocesador import (
+        cargar_datos_csv,
+        construir_features_y_targets,
+        preprocesar_datos_xgboost,
+        dividir_datos,
+        MODELS_DIR,
+    )
+except ModuleNotFoundError:
+    from lstm.src.preprocesamiento.preprocesador import (
+        cargar_datos_csv,
+        construir_features_y_targets,
+        preprocesar_datos_xgboost,
+        dividir_datos,
+        MODELS_DIR,
+    )
 
 def entrenar_modelo_xgboost():
     print("=== INICIANDO ENTRENAMIENTO XGBOOST ===")

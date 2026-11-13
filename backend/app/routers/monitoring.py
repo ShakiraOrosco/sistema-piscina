@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from datetime import date, datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -31,7 +32,7 @@ async def health():
 
 
 @router.post("/lecturas", status_code=201)
-async def crear_lectura(payload: Dict[str, Any]):
+def crear_lectura(payload: Dict[str, Any]):
     """Recibe una lectura del sensor IoT, la guarda en `medicion` y dispara la predicción LSTM.
 
     Cuerpo esperado: {"ph": 7.2, "turbidez": 4.1, "temperatura": 28.0, "personas": 30}
@@ -137,7 +138,7 @@ async def crear_lectura(payload: Dict[str, Any]):
 
 @router.post("/api/v1/aforo-camara", status_code=201)
 @router.post("/api/aforo-camara", status_code=201)
-async def registrar_aforo_camara(payload: Dict[str, Any]):
+def registrar_aforo_camara(payload: Dict[str, Any]):
     """Guarda una lectura del aforo detectado por la cámara inteligente en `aforo_camara`."""
     if payload is None or "cantidad_personas" not in payload:
         raise HTTPException(status_code=400, detail="Se requiere el campo 'cantidad_personas'")
@@ -183,7 +184,7 @@ async def registrar_aforo_camara(payload: Dict[str, Any]):
 
 @router.get("/api/v1/aforo-camara/historial")
 @router.get("/api/aforo-camara/historial")
-async def historial_aforo_camara():
+def historial_aforo_camara():
     """Devuelve el historial de registros detectados por la cámara inteligente para la jornada de hoy."""
     conn = get_connection()
     if conn is None:
@@ -257,7 +258,7 @@ async def historial_aforo_camara():
 
 @router.get("/api/v1/aforo-manual/historial")
 @router.get("/api/aforo-manual/historial")
-async def historial_aforo_manual(fecha: Optional[str] = None):
+def historial_aforo_manual(fecha: Optional[str] = None):
     """Devuelve el historial de ingresos manuales (taquilla) para la jornada seleccionada (o la de hoy)."""
     conn = get_connection()
     if conn is None:
@@ -412,7 +413,7 @@ async def actualizar_geocerca_roi(payload: Dict[str, Any]):
 
 
 @router.get("/lecturas")
-async def obtener_lecturas():
+def obtener_lecturas():
     conn = get_connection()
     if conn is None:
         raise HTTPException(status_code=500, detail="No se pudo conectar a Supabase")
@@ -434,7 +435,7 @@ async def obtener_lecturas():
 
 
 @router.post("/api/dosificacion_parcial", status_code=201)
-async def registrar_dosificacion_parcial(payload: Dict[str, Any]):
+def registrar_dosificacion_parcial(payload: Dict[str, Any]):
     if not payload or "quimico" not in payload or "cantidad_g" not in payload:
         raise HTTPException(status_code=400, detail="Se requiere quimico y cantidad_g")
     
@@ -461,50 +462,33 @@ async def registrar_dosificacion_parcial(payload: Dict[str, Any]):
 
 
 @router.get("/api/estado_actual")
-async def estado_actual():
+def estado_actual():
     conn = get_connection()
     if conn is None:
         raise HTTPException(status_code=500, detail="No se pudo conectar a Supabase")
 
     try:
-        cur = conn.cursor()
-        fecha_hoy = date.today()
-        cur.execute(
-            "SELECT id_jornada FROM jornada WHERE fecha = %s ORDER BY id_jornada DESC LIMIT 1",
-            (fecha_hoy,)
-        )
-        row = cur.fetchone()
-        if not row:
+        id_jornada = _id_jornada_hoy(conn)
+        if not id_jornada:
             raise HTTPException(status_code=404, detail="No hay jornada para hoy")
 
-        id_jornada = row[0]
         cur = get_dict_cursor(conn)
 
+        # 1. Mediciones de hoy (una sola consulta para historial, última lectura y datos LSTM)
         cur.execute(
             """
             SELECT fecha_hora, ph, turbidez, temperatura
             FROM medicion
             WHERE id_jornada = %s
-            ORDER BY fecha_hora DESC LIMIT 1
+            ORDER BY fecha_hora ASC
             """,
             (id_jornada,),
         )
-        med = cur.fetchone()
+        med_rows = [dict(r) for r in cur.fetchall()]
+        med = med_rows[-1] if med_rows else None
+        historial = [serializar_dict(r) for r in med_rows]
 
-        # Total personas desde aforo_manual (Taquilla)
-        cur.execute(
-            "SELECT COALESCE(SUM(total_personas),0) AS personas FROM aforo_manual WHERE id_jornada = %s",
-            (id_jornada,),
-        )
-        personas_manual_row = cur.fetchone()
-
-        # Último aforo detectado por la Cámara Inteligente
-        cur.execute(
-            "SELECT cantidad_personas FROM aforo_camara WHERE id_jornada = %s ORDER BY fecha_hora DESC LIMIT 1",
-            (id_jornada,),
-        )
-        personas_camara_row = cur.fetchone()
-
+        # 2. Resumen diario y predicción
         cur.execute("SELECT * FROM resumen_diario WHERE id_jornada = %s", (id_jornada,))
         resumen_row = cur.fetchone()
 
@@ -519,30 +503,69 @@ async def estado_actual():
         )
         pred = cur.fetchone()
 
+        # 3. Dosis parciales aplicadas hoy
         cur.execute(
             """
-            SELECT fecha_hora, ph, turbidez, temperatura
-            FROM medicion
-            WHERE id_jornada = %s
-            ORDER BY fecha_hora ASC
-            """,
-            (id_jornada,),
-        )
-        historial = [serializar_dict(r) for r in cur.fetchall()]
-
-        # Consultar las dosis parciales aplicadas hoy
-        cur.execute(
-            """
-            SELECT quimico, COALESCE(SUM(cantidad_g), 0) as total
+            SELECT quimico, COALESCE(SUM(cantidad_g), 0) as total, MAX(fecha_hora) as ultima_hora
             FROM dosificacion_parcial
             WHERE id_jornada = %s
             GROUP BY quimico
             """,
             (id_jornada,)
         )
-        dosis_aplicadas = {r["quimico"].lower(): float(r["total"]) for r in cur.fetchall()}
+        parcial_rows = cur.fetchall()
+        dosis_aplicadas = {r["quimico"].lower(): float(r["total"]) for r in parcial_rows}
+        ultimas_horas_dosis = {r["quimico"].lower(): r["ultima_hora"] for r in parcial_rows}
 
-        datos = obtener_datos_prediccion(conn, id_jornada)
+        # 4. Aforo Manual (una sola consulta, resumen calculado en memoria)
+        cur.execute(
+            """
+            SELECT id_registro, hora_entrada, cantidad_tarifa_15, cantidad_tarifa_20,
+                   total_personas, total_recaudado, observaciones, creado_en
+            FROM aforo_manual
+            WHERE id_jornada = %s
+            ORDER BY hora_entrada DESC
+            """,
+            (id_jornada,),
+        )
+        man_rows = [dict(r) for r in cur.fetchall()]
+        aforo_manual_registros = [serializar_dict(r) for r in man_rows]
+        aforo_manual = sum(int(r.get("total_personas") or 0) for r in man_rows)
+        aforo_manual_resumen = {
+            "total_personas": float(aforo_manual),
+            "total_tarifa_15": float(sum(int(r.get("cantidad_tarifa_15") or 0) for r in man_rows)),
+            "total_tarifa_20": float(sum(int(r.get("cantidad_tarifa_20") or 0) for r in man_rows)),
+            "total_recaudado": float(sum(float(r.get("total_recaudado") or 0) for r in man_rows)),
+            "cantidad_registros": float(len(man_rows)),
+        }
+
+        # 5. Aforo Cámara Inteligente (una sola consulta, resumen calculado en memoria)
+        cur.execute(
+            """
+            SELECT id_registro, fecha_hora, cantidad_personas, id_dispositivo, creado_en
+            FROM aforo_camara
+            WHERE id_jornada = %s
+            ORDER BY fecha_hora DESC
+            """,
+            (id_jornada,),
+        )
+        cam_rows = [dict(r) for r in cur.fetchall()]
+        aforo_camara_registros = [serializar_dict(r) for r in cam_rows]
+        aforo_camara = int(cam_rows[0]["cantidad_personas"]) if cam_rows else 0
+        conteos_cam = [int(r.get("cantidad_personas") or 0) for r in cam_rows]
+        aforo_camara_resumen = {
+            "ultimo_conteo": aforo_camara,
+            "pico_personas": max(conteos_cam) if conteos_cam else 0,
+            "promedio_personas": round(sum(conteos_cam) / len(conteos_cam), 1) if conteos_cam else 0.0,
+            "total_registros": len(cam_rows),
+        }
+
+        # Reusar datos ya consultados sin hacer 3 queries extra en obtener_datos_prediccion
+        datos = (
+            med_rows,
+            [{"fecha_hora": r["fecha_hora"], "cantidad_personas": r["cantidad_personas"]} for r in reversed(cam_rows)],
+            [{"hora_entrada": r["hora_entrada"], "total_personas": r["total_personas"]} for r in reversed(man_rows)],
+        )
         perfiles = obtener_perfil_historico(conn)
 
         try:
@@ -557,67 +580,15 @@ async def estado_actual():
             print(f"⚠️ No se pudo calcular el pronóstico: {exc}")
             sensores_info = {}
 
-        aforo_manual = int(personas_manual_row["personas"]) if personas_manual_row else 0
-        aforo_camara = int(personas_camara_row["cantidad_personas"]) if personas_camara_row else 0
-
-        # Historial y resumen detallado de Aforo Manual (Taquilla) de hoy
-        cur.execute(
-            """
-            SELECT id_registro, hora_entrada, cantidad_tarifa_15, cantidad_tarifa_20,
-                   total_personas, total_recaudado, observaciones, creado_en
-            FROM aforo_manual
-            WHERE id_jornada = %s
-            ORDER BY hora_entrada DESC
-            """,
-            (id_jornada,),
-        )
-        aforo_manual_registros = [serializar_dict(r) for r in cur.fetchall()]
-
-        cur.execute(
-            """
-            SELECT
-                COALESCE(SUM(total_personas), 0)     AS total_personas,
-                COALESCE(SUM(cantidad_tarifa_15), 0) AS total_tarifa_15,
-                COALESCE(SUM(cantidad_tarifa_20), 0) AS total_tarifa_20,
-                COALESCE(SUM(total_recaudado), 0)    AS total_recaudado,
-                COUNT(*)                             AS cantidad_registros
-            FROM aforo_manual
-            WHERE id_jornada = %s
-            """,
-            (id_jornada,),
-        )
-        man_resumen_row = cur.fetchone()
-        aforo_manual_resumen = serializar_dict(man_resumen_row) or {}
-
-        # Historial y resumen detallado de Aforo Cámara Inteligente de hoy
-        cur.execute(
-            """
-            SELECT id_registro, fecha_hora, cantidad_personas, id_dispositivo, creado_en
-            FROM aforo_camara
-            WHERE id_jornada = %s
-            ORDER BY fecha_hora DESC
-            """,
-            (id_jornada,),
-        )
-        aforo_camara_registros = [serializar_dict(r) for r in cur.fetchall()]
-
-        cur.execute(
-            """
-            SELECT
-                COALESCE(MAX(cantidad_personas), 0)                      AS pico_personas,
-                COALESCE(ROUND(AVG(cantidad_personas)::numeric, 1), 0.0) AS promedio_personas,
-                COUNT(*)                                                 AS total_registros
-            FROM aforo_camara
-            WHERE id_jornada = %s
-            """,
-            (id_jornada,),
-        )
-        cam_stats = cur.fetchone() or {}
-        aforo_camara_resumen = {
-            "ultimo_conteo": aforo_camara,
-            "pico_personas": int(cam_stats.get("pico_personas") or 0),
-            "promedio_personas": float(cam_stats.get("promedio_personas") or 0.0),
-            "total_registros": int(cam_stats.get("total_registros") or 0),
+        _snapshot_dashboard["ts"] = time.monotonic()
+        _snapshot_dashboard["data"] = {
+            "id_jornada": id_jornada,
+            "mediciones": med_rows,
+            "sensores_info": sensores_info,
+            "pred": dict(pred) if pred else None,
+            "aforo_camara": aforo_camara,
+            "dosis_aplicadas": dict(dosis_aplicadas),
+            "ultimas_horas": dict(ultimas_horas_dosis),
         }
 
         return {
@@ -646,21 +617,15 @@ async def estado_actual():
 
 
 @router.post("/api/predecir")
-async def predecir_ahora():
+def predecir_ahora():
     conn = get_connection()
     if conn is None:
         raise HTTPException(status_code=500, detail="No se pudo conectar a Supabase")
 
     try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id_jornada FROM jornada WHERE fecha = %s ORDER BY id_jornada DESC LIMIT 1",
-            (date.today(),)
-        )
-        row = cur.fetchone()
-        if not row:
+        id_jornada = _id_jornada_hoy(conn)
+        if not id_jornada:
             raise HTTPException(status_code=404, detail="No hay jornada para hoy")
-        id_jornada = row[0]
 
         resumen = recalcular_resumen(conn, id_jornada)
         if not resumen:
@@ -675,18 +640,21 @@ async def predecir_ahora():
 
 
 def _id_jornada_hoy(conn):
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT id_jornada FROM jornada WHERE fecha = %s ORDER BY id_jornada DESC LIMIT 1",
-        (date.today(),)
-    )
-    row = cur.fetchone()
-    cur.close()
-    return row[0] if row else None
+    try:
+        return obtener_o_crear_jornada_hoy(conn)
+    except Exception:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id_jornada FROM jornada WHERE fecha = %s ORDER BY id_jornada DESC LIMIT 1",
+            (date.today(),)
+        )
+        row = cur.fetchone()
+        cur.close()
+        return row[0] if row else None
 
 
 @router.get("/api/pronostico")
-async def pronostico():
+def pronostico():
     """Pronóstico hora a hora (hasta las 20:00) de pH, turbidez, temperatura y bañistas,
     más el estado de cada sensor y el valor estimado de los que fallaron."""
     conn = get_connection()
@@ -711,156 +679,168 @@ MOTIVOS_FALLA = {
     "sin_conexion": "sin conexión",
 }
 
+_snapshot_dashboard: Dict[str, Any] = {"ts": 0.0, "data": None}
+
+
+def _construir_alertas_desde_datos(
+    mediciones: list,
+    info: Optional[Dict[str, Any]],
+    pred_dict: Optional[Dict[str, Any]],
+    aforo_actual: int,
+    aplicadas: Dict[str, float],
+    ultimas_horas: Dict[str, Any],
+) -> list:
+    alertas_list = []
+    if info and info.get("estado_sensores"):
+        estado = info["estado_sensores"]
+        estimados = info.get("valores_estimados") or {}
+        actuales = {}
+        for var, nombre in NOMBRES_SENSOR.items():
+            e = estado[var]["estado"]
+            if e in MOTIVOS_FALLA:
+                est = estimados.get(var)
+                extra = f" — usando valor estimado {est['valor']:.2f}" if est else ""
+                alertas_list.append({
+                    "tipo": "warning",
+                    "msg": f"Sensor de {nombre} {MOTIVOS_FALLA[e]}{extra}",
+                })
+                if est:
+                    actuales[var] = est["valor"]
+            else:
+                for m in reversed(mediciones):
+                    if m.get(var) is not None:
+                        actuales[var] = float(m[var])
+                        break
+
+        ph, turb, temp = actuales.get("ph"), actuales.get("turbidez"), actuales.get("temperatura")
+
+        if ph is not None:
+            if ph < 7.0:
+                alertas_list.append({"tipo": "danger",  "msg": f"pH bajo: {ph:.2f} — riesgo para bañistas"})
+            elif ph > 7.6:
+                alertas_list.append({"tipo": "warning", "msg": f"pH elevado: {ph:.2f} — monitorear"})
+
+        if turb is not None:
+            if turb > 10:
+                alertas_list.append({"tipo": "danger",  "msg": f"Turbidez crítica: {turb:.1f} NTU"})
+            elif turb > 5:
+                alertas_list.append({"tipo": "warning", "msg": f"Turbidez alta: {turb:.1f} NTU"})
+
+        if temp is not None and temp > 32:
+            alertas_list.append({"tipo": "warning", "msg": f"Temperatura elevada: {temp:.1f} °C"})
+
+        trigger_microdosis = (turb is not None and turb > 3.0) or aforo_actual > 20
+        if pred_dict and trigger_microdosis:
+            cloro_total = float(pred_dict.get("cloro_pred") or 0.0)
+            cobre_total = float(pred_dict.get("cobre_pred") or 0.0)
+            cloro_aplicado = aplicadas.get("cloro", 0.0)
+            cobre_aplicado = aplicadas.get("sulfato de cobre", 0.0)
+            ultima_dosis_cloro = ultimas_horas.get("cloro")
+            ultima_dosis_cobre = ultimas_horas.get("sulfato de cobre")
+            ahora = datetime.now(timezone.utc)
+
+            def en_cooldown(ultima_hora):
+                if not ultima_hora:
+                    return False
+                if ultima_hora.tzinfo is None:
+                    ultima_hora = ultima_hora.replace(tzinfo=timezone.utc)
+                return (ahora - ultima_hora).total_seconds() < 7200
+
+            cloro_restante = cloro_total - cloro_aplicado
+            cobre_restante = cobre_total - cobre_aplicado
+            motivo = "Pico de turbidez detectado" if turb and turb > 3.0 else "Alta afluencia de bañistas detectada"
+
+            if cloro_restante > 0:
+                if en_cooldown(ultima_dosis_cloro):
+                    alertas_list.append({
+                        "tipo": "ok",
+                        "msg": "El pico de turbidez está siendo tratado. Micro-dosis de Cloro actuando (en tiempo de gracia de 2h)."
+                    })
+                else:
+                    dosis_recomendada_cloro = round(min(cloro_restante, 25.0), 1)
+                    if dosis_recomendada_cloro > 5.0:
+                        alertas_list.append({
+                            "tipo": "action",
+                            "msg": f"{motivo}. Aplicar micro-dosis de Cloro ({dosis_recomendada_cloro}g) ahora para mantener desinfección.",
+                            "quimico": "Cloro",
+                            "cantidad": dosis_recomendada_cloro
+                        })
+
+            if cobre_restante > 0 and not en_cooldown(ultima_dosis_cobre):
+                dosis_recomendada_cobre = round(min(cobre_restante, 5.0), 1)
+                if dosis_recomendada_cobre > 1.0:
+                    alertas_list.append({
+                        "tipo": "action",
+                        "msg": f"{motivo}. Aplicar micro-dosis de Sulfato de Cobre ({dosis_recomendada_cobre}g) preventivo.",
+                        "quimico": "Sulfato de Cobre",
+                        "cantidad": dosis_recomendada_cobre
+                    })
+
+    if not alertas_list:
+        alertas_list.append({"tipo": "ok", "msg": "Todos los parámetros dentro del rango normal"})
+    return alertas_list
+
 
 @router.get("/api/alertas")
-async def alertas():
+def alertas():
+    snap = _snapshot_dashboard.get("data")
+    if snap is not None and (time.monotonic() - _snapshot_dashboard["ts"]) < 6.0:
+        return _construir_alertas_desde_datos(
+            mediciones=snap["mediciones"],
+            info=snap["sensores_info"],
+            pred_dict=snap["pred"],
+            aforo_actual=snap["aforo_camara"],
+            aplicadas=snap["dosis_aplicadas"],
+            ultimas_horas=snap["ultimas_horas"],
+        )
+
     conn = get_connection()
     if conn is None:
         raise HTTPException(status_code=500, detail="No se pudo conectar a Supabase")
 
     try:
-        alertas_list = []
         id_jornada = _id_jornada_hoy(conn)
-        info = None
-        if id_jornada is not None:
-            datos = obtener_datos_prediccion(conn, id_jornada)
-            mediciones = datos[0]
-            info = estado_y_pronostico(conn, id_jornada, datos=datos) if mediciones else None
+        if id_jornada is None:
+            return [{"tipo": "ok", "msg": "Todos los parámetros dentro del rango normal"}]
 
-        if info:
-            estado = info["estado_sensores"]
-            estimados = info["valores_estimados"]
-            actuales = {}
-            for var, nombre in NOMBRES_SENSOR.items():
-                e = estado[var]["estado"]
-                if e in MOTIVOS_FALLA:
-                    est = estimados.get(var)
-                    extra = f" — usando valor estimado {est['valor']:.2f}" if est else ""
-                    alertas_list.append({
-                        "tipo": "warning",
-                        "msg": f"Sensor de {nombre} {MOTIVOS_FALLA[e]}{extra}",
-                    })
-                    if est:
-                        actuales[var] = est["valor"]
-                else:
-                    # Último valor real válido de ese sensor
-                    for m in reversed(mediciones):
-                        if m.get(var) is not None:
-                            actuales[var] = float(m[var])
-                            break
+        datos = obtener_datos_prediccion(conn, id_jornada)
+        mediciones = datos[0]
+        info = estado_y_pronostico(conn, id_jornada, datos=datos) if mediciones else None
 
-            ph, turb, temp = actuales.get("ph"), actuales.get("turbidez"), actuales.get("temperatura")
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT cloro_pred, cobre_pred FROM prediccion WHERE id_jornada = %s ORDER BY fecha_prediccion DESC LIMIT 1",
+            (id_jornada,)
+        )
+        pred_row = cur.fetchone()
+        pred_dict = {"cloro_pred": pred_row[0], "cobre_pred": pred_row[1]} if pred_row else None
 
-            if ph is not None:
-                if ph < 7.0:
-                    alertas_list.append({"tipo": "danger",  "msg": f"pH bajo: {ph:.2f} — riesgo para bañistas"})
-                elif ph > 7.6:
-                    alertas_list.append({"tipo": "warning", "msg": f"pH elevado: {ph:.2f} — monitorear"})
+        aforo_actual = int(datos[1][-1]["cantidad_personas"]) if datos[1] else 0
 
-            if turb is not None:
-                if turb > 10:
-                    alertas_list.append({"tipo": "danger",  "msg": f"Turbidez crítica: {turb:.1f} NTU"})
-                elif turb > 5:
-                    alertas_list.append({"tipo": "warning", "msg": f"Turbidez alta: {turb:.1f} NTU"})
+        cur.execute(
+            """
+            SELECT quimico, COALESCE(SUM(cantidad_g), 0), MAX(fecha_hora)
+            FROM dosificacion_parcial
+            WHERE id_jornada = %s
+            GROUP BY quimico
+            """,
+            (id_jornada,)
+        )
+        aplicadas = {}
+        ultimas_horas = {}
+        for r in cur.fetchall():
+            quim = r[0].lower()
+            aplicadas[quim] = float(r[1])
+            ultimas_horas[quim] = r[2]
+        cur.close()
 
-            if temp is not None and temp > 32:
-                alertas_list.append({"tipo": "warning", "msg": f"Temperatura elevada: {temp:.1f} °C"})
-
-            # Lógica para recomendación de Micro-dosis (Híbrida)
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT cloro_pred, cobre_pred FROM prediccion WHERE id_jornada = %s ORDER BY fecha_prediccion DESC LIMIT 1",
-                (id_jornada,)
-            )
-            pred = cur.fetchone()
-            
-            # Si hay predicción del modelo LSTM y la turbidez está subiendo o hay mucha gente (ej. aforo cámara > 30)
-            aforo_actual = 0
-            cur.execute("SELECT cantidad_personas FROM aforo_camara WHERE id_jornada = %s ORDER BY fecha_hora DESC LIMIT 1", (id_jornada,))
-            aforo_row = cur.fetchone()
-            if aforo_row:
-                aforo_actual = int(aforo_row[0])
-                
-            trigger_microdosis = (turb is not None and turb > 3.0) or aforo_actual > 20
-            
-            if pred and trigger_microdosis:
-                cloro_total = float(pred[0])
-                cobre_total = float(pred[1])
-                
-                # Consultar dosis aplicadas y la última hora de aplicación
-                cur.execute(
-                    """
-                    SELECT quimico, COALESCE(SUM(cantidad_g), 0), MAX(fecha_hora)
-                    FROM dosificacion_parcial 
-                    WHERE id_jornada = %s 
-                    GROUP BY quimico
-                    """, 
-                    (id_jornada,)
-                )
-                aplicadas = {}
-                ultimas_horas = {}
-                for r in cur.fetchall():
-                    quim = r[0].lower()
-                    aplicadas[quim] = float(r[1])
-                    ultimas_horas[quim] = r[2] # datetime
-                
-                cloro_aplicado = aplicadas.get("cloro", 0.0)
-                cobre_aplicado = aplicadas.get("sulfato de cobre", 0.0)
-                
-                ultima_dosis_cloro = ultimas_horas.get("cloro")
-                ultima_dosis_cobre = ultimas_horas.get("sulfato de cobre")
-                
-                from datetime import timezone
-                ahora = datetime.now(timezone.utc)
-                
-                # Función para verificar si está en cooldown (2 horas = 7200 segundos)
-                def en_cooldown(ultima_hora):
-                    if not ultima_hora:
-                        return False
-                    # Asegurar que ultima_hora tenga timezone si es naive
-                    if ultima_hora.tzinfo is None:
-                        ultima_hora = ultima_hora.replace(tzinfo=timezone.utc)
-                    return (ahora - ultima_hora).total_seconds() < 7200
-                
-                cloro_restante = cloro_total - cloro_aplicado
-                cobre_restante = cobre_total - cobre_aplicado
-                
-                motivo = "Pico de turbidez detectado" if turb and turb > 3.0 else "Alta afluencia de bañistas detectada"
-                
-                if cloro_restante > 0:
-                    if en_cooldown(ultima_dosis_cloro):
-                        alertas_list.append({
-                            "tipo": "ok", 
-                            "msg": "El pico de turbidez está siendo tratado. Micro-dosis de Cloro actuando (en tiempo de gracia de 2h)."
-                        })
-                    else:
-                        dosis_recomendada_cloro = round(min(cloro_restante, 25.0), 1) # Micro-dosis de 25g máx
-                        if dosis_recomendada_cloro > 5.0:
-                            alertas_list.append({
-                                "tipo": "action", 
-                                "msg": f"{motivo}. Aplicar micro-dosis de Cloro ({dosis_recomendada_cloro}g) ahora para mantener desinfección.", 
-                                "quimico": "Cloro", 
-                                "cantidad": dosis_recomendada_cloro
-                            })
-                    
-                if cobre_restante > 0:
-                    if en_cooldown(ultima_dosis_cobre):
-                        # No mostramos alerta redundante para el cobre para no saturar la UI
-                        pass
-                    else:
-                        dosis_recomendada_cobre = round(min(cobre_restante, 5.0), 1) # Micro-dosis de 5g máx
-                        if dosis_recomendada_cobre > 1.0:
-                            alertas_list.append({
-                                "tipo": "action", 
-                                "msg": f"{motivo}. Aplicar micro-dosis de Sulfato de Cobre ({dosis_recomendada_cobre}g) preventivo.", 
-                                "quimico": "Sulfato de Cobre", 
-                                "cantidad": dosis_recomendada_cobre
-                            })
-            cur.close()
-
-        if not alertas_list:
-            alertas_list.append({"tipo": "ok", "msg": "Todos los parámetros dentro del rango normal"})
-
-        return alertas_list
+        return _construir_alertas_desde_datos(
+            mediciones=mediciones,
+            info=info,
+            pred_dict=pred_dict,
+            aforo_actual=aforo_actual,
+            aplicadas=aplicadas,
+            ultimas_horas=ultimas_horas,
+        )
     finally:
         conn.close()

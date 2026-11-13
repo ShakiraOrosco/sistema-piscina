@@ -7,13 +7,23 @@ from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 import matplotlib.pyplot as plt
 
-from lstm.src.preprocesamiento.preprocesador import (
+try:
+    from backend.lstm.src.preprocesamiento.preprocesador import (
     cargar_datos_csv,
     construir_features_y_targets,
     preprocesar_datos_lstm,
     dividir_datos,
     MODELS_DIR,
 )
+
+except ModuleNotFoundError:
+    from lstm.src.preprocesamiento.preprocesador import (
+        cargar_datos_csv,
+        construir_features_y_targets,
+        preprocesar_datos_lstm,
+        dividir_datos,
+        MODELS_DIR,
+    )
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 REPORTS_DIR = os.path.join(BASE_DIR, "reports")

@@ -37,13 +37,13 @@ class ConfigurarDispositivoPayload(BaseModel):
 
 
 @router.get("/estado")
-def obtener_estado_dosificacion():
+async def obtener_estado_dosificacion():
     """Retorna el estado en tiempo real de la dosificación (bomba, electroválvula, pulsos y litros)."""
     return dosificacion_manager.obtener_estado()
 
 
 @router.get("/calcular")
-def calcular_litros(
+async def calcular_litros(
     quimico: str = Query(..., description="Nombre del químico"),
     cantidad_g: float = Query(..., gt=0, description="Gramos a dosificar")
 ):

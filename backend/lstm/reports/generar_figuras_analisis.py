@@ -17,6 +17,7 @@ REPORTS_DIR = SCRIPT_DIR
 posibles_rutas = [
     os.path.join(DATA_DIR, "dataset_piscina.csv"),
     os.path.join(os.path.dirname(PROJECT_ROOT), "lstm", "data", "dataset_piscina.csv"),
+    os.path.join("backend", "lstm", "data", "dataset_piscina.csv"),
     "dataset_piscina.csv"
 ]
 

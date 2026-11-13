@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
-export default function Header() {
+export default function Header({ sidebarOpen, setSidebarOpen }) {
   const { session, logout } = useAuth()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef(null)
@@ -19,8 +19,41 @@ export default function Header() {
   })
 
   return (
-    <header className="sticky top-0 z-999 flex w-full bg-white dark:bg-[#24303F] border-b border-slate-200 dark:border-[#313D4A]">
-      <div className="flex flex-grow items-center justify-end py-4 px-4 shadow-sm md:px-6 2xl:px-11">
+    <header className="sticky top-0 z-30 flex w-full bg-white dark:bg-[#24303F] border-b border-slate-200 dark:border-[#313D4A]">
+      <div className="flex flex-grow items-center justify-between py-4 px-4 shadow-sm md:px-6 2xl:px-11">
+        {/* Cuando la barra NO está desplegada, el botón aparece aquí en el nav de arriba */}
+        <div className="flex items-center gap-3">
+          {!sidebarOpen && (
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setSidebarOpen(true)
+                }}
+                title="Desplegar menú lateral"
+                aria-label="Desplegar menú lateral"
+                className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#1A222C] text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#313D4A] hover:text-blue-600 transition-colors shadow-xs cursor-pointer"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+
+              <Link to="/" className="flex items-center gap-2.5 ml-1">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white font-bold text-sm">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M4 12V20C4 20.5523 4.44772 21 5 21H19C19.5523 21 20 20.5523 20 20V12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
+                    <path d="M12 15L12 3" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
+                    <path d="M8 7L12 3L16 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+                <span className="text-lg font-bold text-slate-800 dark:text-white hidden sm:inline">Playa Azul</span>
+              </Link>
+            </>
+          )}
+        </div>
+
         <div className="relative" ref={dropdownRef}>
           <div 
             className="flex items-center gap-3 group cursor-pointer" 
@@ -45,48 +78,48 @@ export default function Header() {
             </svg>
           </div>
 
-            {/* Dropdown Menu */}
-            {dropdownOpen && (
-              <div className="absolute right-0 mt-4 flex w-62.5 flex-col rounded-xl border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] shadow-lg z-99999 w-[260px]">
-                <div className="px-6 py-5 border-b border-slate-200 dark:border-[#313D4A]">
-                  <span className="block text-sm font-semibold text-slate-800 dark:text-white">
-                    {session?.usuario?.nombre} {session?.usuario?.primer_apellido}
-                  </span>
-                  <span className="block text-sm font-medium text-slate-500 dark:text-slate-400 mt-0.5">
-                    {session?.usuario?.correo}
-                  </span>
-                </div>
+          {/* Dropdown Menu */}
+          {dropdownOpen && (
+            <div className="absolute right-0 mt-4 flex w-62.5 flex-col rounded-xl border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] shadow-lg z-99999 w-[260px]">
+              <div className="px-6 py-5 border-b border-slate-200 dark:border-[#313D4A]">
+                <span className="block text-sm font-semibold text-slate-800 dark:text-white">
+                  {session?.usuario?.nombre} {session?.usuario?.primer_apellido}
+                </span>
+                <span className="block text-sm font-medium text-slate-500 dark:text-slate-400 mt-0.5">
+                  {session?.usuario?.correo}
+                </span>
+              </div>
 
-                <ul className="flex flex-col gap-1 px-4 py-4 border-b border-slate-200 dark:border-[#313D4A]">
-                  <li>
-                    <Link
-                      to="/profile"
-                      onClick={() => setDropdownOpen(false)}
-                      className="flex items-center gap-3.5 text-sm font-medium duration-300 ease-in-out hover:text-blue-600 dark:hover:text-white text-slate-600 dark:text-slate-300 px-2 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-[#313D4A]"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                      </svg>
-                      Mi Perfil
-                    </Link>
-                  </li>
-                </ul>
-                
-                <div className="px-4 py-4">
-                  <button
-                    onClick={logout}
-                    className="w-full flex items-center gap-3.5 text-sm font-medium duration-300 ease-in-out hover:text-red-600 text-slate-600 dark:text-slate-300 px-2 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-[#313D4A]"
+              <ul className="flex flex-col gap-1 px-4 py-4 border-b border-slate-200 dark:border-[#313D4A]">
+                <li>
+                  <Link
+                    to="/profile"
+                    onClick={() => setDropdownOpen(false)}
+                    className="flex items-center gap-3.5 text-sm font-medium duration-300 ease-in-out hover:text-blue-600 dark:hover:text-white text-slate-600 dark:text-slate-300 px-2 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-[#313D4A]"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
                     </svg>
-                    Cerrar sesión
-                  </button>
-                </div>
+                    Mi Perfil
+                  </Link>
+                </li>
+              </ul>
+              
+              <div className="px-4 py-4">
+                <button
+                  onClick={logout}
+                  className="w-full flex items-center gap-3.5 text-sm font-medium duration-300 ease-in-out hover:text-red-600 text-slate-600 dark:text-slate-300 px-2 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-[#313D4A]"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                  </svg>
+                  Cerrar sesión
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
-      </header>
-    )
-  }
+      </div>
+    </header>
+  )
+}

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import importlib
+import time
 from datetime import date, datetime
 from typing import Any, Dict, Optional, Tuple
 
 from ..db import get_dict_cursor
+
+_jornada_hoy_cache = {"fecha": None, "id_jornada": None}
 
 
 def serializable(obj):
@@ -26,6 +29,9 @@ def serializar_dict(d):
 def obtener_o_crear_jornada_hoy(conn):
     """Devuelve el id_jornada del día actual local, creándola si no existe."""
     fecha_hoy = date.today()
+    if _jornada_hoy_cache["fecha"] == fecha_hoy and _jornada_hoy_cache["id_jornada"] is not None:
+        return _jornada_hoy_cache["id_jornada"]
+
     cur = conn.cursor()
     cur.execute(
         "SELECT id_jornada FROM jornada WHERE fecha = %s ORDER BY id_jornada DESC LIMIT 1",
@@ -34,12 +40,16 @@ def obtener_o_crear_jornada_hoy(conn):
     row = cur.fetchone()
     if row:
         cur.close()
+        _jornada_hoy_cache["fecha"] = fecha_hoy
+        _jornada_hoy_cache["id_jornada"] = row[0]
         return row[0]
 
     cur.execute("INSERT INTO jornada (fecha) VALUES (%s) RETURNING id_jornada", (fecha_hoy,))
     id_jornada = cur.fetchone()[0]
     conn.commit()
     cur.close()
+    _jornada_hoy_cache["fecha"] = fecha_hoy
+    _jornada_hoy_cache["id_jornada"] = id_jornada
     return id_jornada
 
 
@@ -139,6 +149,7 @@ def recalcular_resumen(conn, id_jornada: int):
 
 
 _MODULOS_PREDICCION = [
+    "backend.lstm.src.prediction.prediccion_service",
     "lstm.src.prediction.prediccion_service",
     "lstm_piscina",
     "lstm.src.prediction",
@@ -146,11 +157,19 @@ _MODULOS_PREDICCION = [
     "backend.app.services.prediccion",
 ]
 
+_mod_pred_cache = None
+_mod_pron_cache = None
+_perfil_historico_cache = {"ts": 0.0, "dias": 0, "data": None}
+
 
 def _importar_modulo_prediccion():
+    global _mod_pred_cache
+    if _mod_pred_cache is not None:
+        return _mod_pred_cache
     for name in _MODULOS_PREDICCION:
         try:
-            return importlib.import_module(name)
+            _mod_pred_cache = importlib.import_module(name)
+            return _mod_pred_cache
         except ModuleNotFoundError:
             continue
     return None
@@ -197,6 +216,14 @@ def obtener_datos_prediccion(conn, id_jornada: int):
 
 def obtener_perfil_historico(conn, dias: int = 30) -> Dict[str, Dict[int, float]]:
     """Promedio por hora de cada variable en las jornadas anteriores (forma típica del día)."""
+    ahora_ts = time.time()
+    if (
+        _perfil_historico_cache["data"] is not None
+        and _perfil_historico_cache["dias"] == dias
+        and (ahora_ts - _perfil_historico_cache["ts"]) < 600.0
+    ):
+        return _perfil_historico_cache["data"]
+
     perfiles: Dict[str, Dict[int, float]] = {"ph": {}, "turbidez": {}, "temperatura": {}, "banistas": {}}
     try:
         cur = get_dict_cursor(conn)
@@ -232,6 +259,9 @@ def obtener_perfil_historico(conn, dias: int = 30) -> Dict[str, Dict[int, float]
             if r["banistas"] is not None:
                 perfiles["banistas"][int(r["h"])] = float(r["banistas"])
         cur.close()
+        _perfil_historico_cache["ts"] = ahora_ts
+        _perfil_historico_cache["dias"] = dias
+        _perfil_historico_cache["data"] = perfiles
     except Exception as exc:
         conn.rollback()
         print(f"⚠️ No se pudo calcular el perfil histórico: {exc}")
@@ -239,10 +269,16 @@ def obtener_perfil_historico(conn, dias: int = 30) -> Dict[str, Dict[int, float]
 
 
 def _modulo_pronostico():
-    try:
-        return importlib.import_module("lstm.src.prediction.pronostico_sensores")
-    except ModuleNotFoundError:
-        return None
+    global _mod_pron_cache
+    if _mod_pron_cache is not None:
+        return _mod_pron_cache
+    for name in ("backend.lstm.src.prediction.pronostico_sensores", "lstm.src.prediction.pronostico_sensores"):
+        try:
+            _mod_pron_cache = importlib.import_module(name)
+            return _mod_pron_cache
+        except ModuleNotFoundError:
+            continue
+    return None
 
 
 def estado_y_pronostico(conn, id_jornada: int, perfiles=None, datos=None):

@@ -1,6 +1,9 @@
 from datetime import datetime
 
-from lstm.src.prediction.prediccion_service import seleccionar_franjas
+try:
+    from backend.lstm.src.prediction.prediccion_service import seleccionar_franjas
+except ModuleNotFoundError:
+    from lstm.src.prediction.prediccion_service import seleccionar_franjas
 
 
 def _m(h, mi, ph):

@@ -9,6 +9,6 @@
     "test:e2e": "npm --prefix frontend run test:e2e",
     "test:e2e:ui": "npm --prefix frontend run test:e2e:ui",
     "test:e2e:report": "npm --prefix frontend run test:e2e:report",
-    "analisis:figuras": "backend\\.venv\\Scripts\\python.exe lstm/reports/generar_figuras_analisis.py"
+    "analisis:figuras": "backend\\.venv\\Scripts\\python.exe backend/lstm/reports/generar_figuras_analisis.py"
   }
 }

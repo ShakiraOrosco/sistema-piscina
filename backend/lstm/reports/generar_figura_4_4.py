@@ -8,16 +8,18 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
-BACKEND_DIR = os.path.join(PROJECT_ROOT, "backend")
-DATA_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
+LSTM_DIR = os.path.dirname(SCRIPT_DIR)
+BACKEND_DIR = os.path.dirname(LSTM_DIR)
+PROJECT_ROOT = os.path.dirname(BACKEND_DIR)
+DATA_DIR = os.path.join(LSTM_DIR, "data")
 
-sys.path.append(BACKEND_DIR)
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
 from app.db import get_connection
 
 csv_path = os.path.join(DATA_DIR, "dataset_mediciones_horas.csv")
 if not os.path.exists(csv_path):
-    csv_path = os.path.join("lstm", "data", "dataset_mediciones_horas.csv")
+    csv_path = os.path.join("backend", "lstm", "data", "dataset_mediciones_horas.csv")
 
 print(f"Cargando pretest desde: {csv_path}")
 df_pre = pd.read_csv(csv_path)

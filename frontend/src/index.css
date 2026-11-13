@@ -17,3 +17,12 @@
   background-color: #1a222c;
   color: #aeb7c0;
 }
+
+/* Ocultar barra de scroll fea en el menú lateral */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
