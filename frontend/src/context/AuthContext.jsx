@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import FloatingErrorToast from '../components/FloatingErrorToast'
 
 const AuthContext = createContext()
 
@@ -17,6 +18,7 @@ export function AuthProvider({ children }) {
   
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const errorTimerRef = useRef(null)
 
   const showMessage = useCallback((text) => {
     setMessage(text)
@@ -30,7 +32,10 @@ export function AuthProvider({ children }) {
       : errorMsgOrObj?.response?.data?.detail || 'No se pudo completar la operación'
     setError(text)
     setMessage('')
-    window.setTimeout(() => setError(''), 5000)
+    if (errorTimerRef.current) {
+      window.clearTimeout(errorTimerRef.current)
+    }
+    errorTimerRef.current = window.setTimeout(() => setError(''), 5000)
   }, [])
 
   const authConfig = () => ({ headers: { Authorization: `Bearer ${session?.access_token}` } })
@@ -95,6 +100,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={value}>
+      <FloatingErrorToast message={error} onClose={() => setError('')} />
       {children}
     </AuthContext.Provider>
   )

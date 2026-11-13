@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import api from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
+import FloatingErrorToast from '../FloatingErrorToast'
 
 export default function ReportesModal({ isOpen, onClose }) {
   const { session } = useAuth()
@@ -131,12 +132,7 @@ export default function ReportesModal({ isOpen, onClose }) {
         {/* Contenido del Modal */}
         <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
           {/* Mensajes de Estado */}
-          {errorMsg && (
-            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-950/30 dark:border-rose-900/50 dark:text-rose-400 text-xs font-semibold flex items-center gap-2">
-              <span>⚠️</span>
-              <span>{errorMsg}</span>
-            </div>
-          )}
+          <FloatingErrorToast message={errorMsg} onClose={() => setErrorMsg(null)} />
 
           {successMsg && (
             <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-900/50 dark:text-emerald-400 text-xs font-semibold flex items-center gap-2">

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import threading
 from typing import Annotated
 
 import jwt
@@ -25,6 +26,51 @@ from ..services.auth_service import (
 
 router = APIRouter(prefix="/api/v1/auth", tags=["autenticacion"])
 bearer = HTTPBearer()
+
+MAX_INTENTOS_FALLIDOS = 3
+DURACION_BLOQUEO_MINUTOS = 5
+_intentos_login_lock = threading.Lock()
+_intentos_login: dict[str, dict] = {}
+
+
+def _verificar_bloqueo_login(correo: str) -> int | None:
+    """Retorna los segundos restantes de bloqueo si el correo está bloqueado, o None."""
+    ahora = datetime.now(timezone.utc)
+    with _intentos_login_lock:
+        registro = _intentos_login.get(correo)
+        if not registro:
+            return None
+        bloqueado_hasta = registro.get("bloqueado_hasta")
+        if bloqueado_hasta and bloqueado_hasta > ahora:
+            return max(1, int((bloqueado_hasta - ahora).total_seconds()))
+        if bloqueado_hasta and bloqueado_hasta <= ahora:
+            _intentos_login.pop(correo, None)
+        return None
+
+
+def _registrar_intento_fallido_login(correo: str) -> tuple[int, bool]:
+    """Incrementa el conteo de intentos fallidos y bloquea al alcanzar el máximo."""
+    ahora = datetime.now(timezone.utc)
+    with _intentos_login_lock:
+        registro = _intentos_login.get(correo, {"intentos": 0, "bloqueado_hasta": None})
+        intentos = registro["intentos"] + 1
+        recien_bloqueado = intentos >= MAX_INTENTOS_FALLIDOS
+        bloqueado_hasta = (
+            ahora + timedelta(minutes=DURACION_BLOQUEO_MINUTOS)
+            if recien_bloqueado
+            else None
+        )
+        _intentos_login[correo] = {
+            "intentos": intentos,
+            "bloqueado_hasta": bloqueado_hasta,
+        }
+        return intentos, recien_bloqueado
+
+
+def _limpiar_intentos_login(correo: str) -> None:
+    """Reinicia el conteo de intentos fallidos tras un inicio de sesión exitoso."""
+    with _intentos_login_lock:
+        _intentos_login.pop(correo, None)
 
 
 class OlvidePassword(BaseModel):
@@ -139,6 +185,16 @@ def crear_usuario(payload: CrearUsuario, _: Annotated[dict, Depends(administrado
 
 @router.post("/login")
 def iniciar_sesion(payload: Login, request: Request):
+    correo_key = payload.correo.strip().lower()
+    segundos_restantes = _verificar_bloqueo_login(correo_key)
+    if segundos_restantes is not None:
+        minutos = segundos_restantes // 60
+        segundos = segundos_restantes % 60
+        raise HTTPException(
+            status_code=429,
+            detail=f"Acceso bloqueado temporalmente tras {MAX_INTENTOS_FALLIDOS} intentos fallidos. Intenta nuevamente en {minutos}m {segundos:02d}s.",
+        )
+
     conn = get_connection()
     if conn is None:
         raise HTTPException(status_code=500, detail="No se pudo conectar a Supabase")
@@ -151,17 +207,37 @@ def iniciar_sesion(payload: Login, request: Request):
         )
         usuario = cur.fetchone()
         if not usuario or not verificar_password(payload.password, usuario["password"]):
+            intentos, recien_bloqueado = _registrar_intento_fallido_login(correo_key)
             # Registrar intento fallido de inicio de sesión
             registrar_log(
                 conn=conn,
                 id_usuario=usuario["id_usuario"] if usuario else None,
                 modulo="Autenticación",
-                accion="LOGIN_FAILED",
+                accion="LOGIN_BLOCKED" if recien_bloqueado else "LOGIN_FAILED",
                 entidad="usuario",
-                detalle={"correo_intentado": payload.correo, "motivo": "Contraseña o usuario inválido"},
+                detalle={
+                    "correo_intentado": payload.correo,
+                    "intentos_fallidos": intentos,
+                    "motivo": (
+                        f"Bloqueo temporal ({DURACION_BLOQUEO_MINUTOS} min) tras {MAX_INTENTOS_FALLIDOS} intentos fallidos"
+                        if recien_bloqueado
+                        else "Contraseña o usuario inválido"
+                    ),
+                },
                 ip_origen=ip_cliente,
             )
-            raise HTTPException(status_code=401, detail="Correo o contraseña inválidos")
+            if recien_bloqueado:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Has superado los {MAX_INTENTOS_FALLIDOS} intentos fallidos. Tu acceso ha sido bloqueado temporalmente por {DURACION_BLOQUEO_MINUTOS} minutos.",
+                )
+            restantes = MAX_INTENTOS_FALLIDOS - intentos
+            raise HTTPException(
+                status_code=401,
+                detail=f"Correo o contraseña inválidos. Te quedan {restantes} intento(s) antes del bloqueo temporal.",
+            )
+
+        _limpiar_intentos_login(correo_key)
 
         # Login exitoso: Registrar auditoría
         registrar_log(

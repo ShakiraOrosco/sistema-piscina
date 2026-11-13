@@ -154,7 +154,79 @@ export default function UsersPage() {
   )
 }
 
+function RequiredMark() {
+  return (
+    <span
+      className="ml-1 inline-flex items-center text-red-500 font-bold"
+      title="Campo obligatorio"
+      aria-label="obligatorio"
+    >
+      *
+    </span>
+  )
+}
+
+function FieldError({ message }) {
+  if (!message) return null
+  return (
+    <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-red-600 dark:text-red-400">
+      <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+        />
+      </svg>
+      <span>{message}</span>
+    </p>
+  )
+}
+
 function UserModal({ user, roles, onClose, onSubmit }) {
+  const [errors, setErrors] = useState({})
+
+  const clearError = (field) => {
+    setErrors((prev) => (prev[field] ? { ...prev, [field]: '' } : prev))
+  }
+
+  const handleFormSubmit = (event) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const values = Object.fromEntries(form)
+    const nextErrors = {}
+
+    if (!values.nombre?.trim()) {
+      nextErrors.nombre = 'El nombre es obligatorio.'
+    }
+    if (!values.primer_apellido?.trim()) {
+      nextErrors.primer_apellido = 'El primer apellido es obligatorio.'
+    }
+    if (!values.correo?.trim()) {
+      nextErrors.correo = 'El correo electrónico es obligatorio.'
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.correo.trim())) {
+      nextErrors.correo = 'Ingresa un correo electrónico válido.'
+    }
+    if (!values.sigla_rol?.trim()) {
+      nextErrors.sigla_rol = 'El rol es obligatorio.'
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors)
+      return
+    }
+
+    setErrors({})
+    onSubmit(event)
+  }
+
+  const inputClass = (field) =>
+    `w-full rounded-lg border bg-transparent dark:bg-[#1A222C] px-4 py-2.5 text-slate-800 dark:text-white outline-none transition-colors ${
+      errors[field]
+        ? 'border-red-500 focus:border-red-500 focus:ring-1 focus:ring-red-500'
+        : 'border-slate-300 dark:border-[#313D4A] focus:border-blue-600 focus:ring-1 focus:ring-blue-600'
+    }`
+
   return (
     <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm px-4 py-5">
       <div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-[#313D4A] bg-white dark:bg-[#24303F] p-8 shadow-2xl">
@@ -169,37 +241,77 @@ function UserModal({ user, roles, onClose, onSubmit }) {
           </button>
         </div>
         
-        <form onSubmit={onSubmit}>
+        <form onSubmit={handleFormSubmit} noValidate>
           <div className="mb-4">
-            <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Nombre</label>
-            <input name="nombre" defaultValue={user.nombre || ''} required className="w-full rounded-lg border border-slate-300 dark:border-[#313D4A] bg-transparent dark:bg-[#1A222C] px-4 py-2.5 text-slate-800 dark:text-white outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600" />
+            <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              Nombre<RequiredMark />
+            </label>
+            <input
+              name="nombre"
+              defaultValue={user.nombre || ''}
+              onChange={() => clearError('nombre')}
+              required
+              className={inputClass('nombre')}
+            />
+            <FieldError message={errors.nombre} />
           </div>
           
           <div className="mb-4 flex gap-4">
             <div className="flex-1">
-              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Primer Apellido</label>
-              <input name="primer_apellido" defaultValue={user.primer_apellido || ''} required className="w-full rounded-lg border border-slate-300 dark:border-[#313D4A] bg-transparent dark:bg-[#1A222C] px-4 py-2.5 text-slate-800 dark:text-white outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600" />
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                Primer Apellido<RequiredMark />
+              </label>
+              <input
+                name="primer_apellido"
+                defaultValue={user.primer_apellido || ''}
+                onChange={() => clearError('primer_apellido')}
+                required
+                className={inputClass('primer_apellido')}
+              />
+              <FieldError message={errors.primer_apellido} />
             </div>
             <div className="flex-1">
               <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Segundo Apellido</label>
-              <input name="segundo_apellido" defaultValue={user.segundo_apellido || ''} className="w-full rounded-lg border border-slate-300 dark:border-[#313D4A] bg-transparent dark:bg-[#1A222C] px-4 py-2.5 text-slate-800 dark:text-white outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600" />
+              <input
+                name="segundo_apellido"
+                defaultValue={user.segundo_apellido || ''}
+                className={inputClass('segundo_apellido')}
+              />
             </div>
           </div>
 
           <div className="mb-4">
-            <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Correo Electrónico</label>
-            <input name="correo" type="email" defaultValue={user.correo || ''} required className="w-full rounded-lg border border-slate-300 dark:border-[#313D4A] bg-transparent dark:bg-[#1A222C] px-4 py-2.5 text-slate-800 dark:text-white outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600" />
+            <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              Correo Electrónico<RequiredMark />
+            </label>
+            <input
+              name="correo"
+              type="email"
+              defaultValue={user.correo || ''}
+              onChange={() => clearError('correo')}
+              required
+              className={inputClass('correo')}
+            />
+            <FieldError message={errors.correo} />
           </div>
 
           <div className="mb-8">
-            <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Rol</label>
-            <select name="sigla_rol" defaultValue={user.sigla_rol || (roles.length > 0 ? roles[0].sigla : 'OPE')} className="w-full rounded-lg border border-slate-300 dark:border-[#313D4A] bg-transparent dark:bg-[#1A222C] px-4 py-2.5 text-slate-800 dark:text-white outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600">
+            <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              Rol<RequiredMark />
+            </label>
+            <select
+              name="sigla_rol"
+              defaultValue={user.sigla_rol || (roles.length > 0 ? roles[0].sigla : 'OPE')}
+              onChange={() => clearError('sigla_rol')}
+              className={inputClass('sigla_rol')}
+            >
               {roles.map((rol) => (
                 <option key={rol.sigla} value={rol.sigla}>
                   {rol.nombre} ({rol.sigla})
                 </option>
               ))}
             </select>
+            <FieldError message={errors.sigla_rol} />
           </div>
 
           <div className="flex gap-4">

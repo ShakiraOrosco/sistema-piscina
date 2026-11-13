@@ -1,5 +1,6 @@
 import { useState, useEffect, useId } from 'react'
 import { monitoringApi } from '../../services/api'
+import FloatingErrorToast from '../FloatingErrorToast'
 
 // Factores de conversión:
 // Cloro: 100g = 10L (0.1 L/g)
@@ -477,11 +478,7 @@ export default function DosificacionModal({
             </>
           )}
 
-          {errorMsg && (
-            <div className="rounded-xl bg-red-50 p-3 text-xs font-medium text-red-600 dark:bg-red-900/20 dark:text-red-400">
-              {errorMsg}
-            </div>
-          )}
+          <FloatingErrorToast message={errorMsg} onClose={() => setErrorMsg('')} />
         </div>
 
         {/* Pie con botones de acción */}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import api from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
+import FloatingErrorToast from '../../components/FloatingErrorToast'
 
 export default function InventarioPage() {
   const { session } = useAuth()
@@ -209,8 +210,11 @@ export default function InventarioPage() {
       </div>
 
       {/* ── Notificación ── */}
-      {notification && (
-        <div className={`max-w-6xl mx-auto px-4 py-3 mt-4 rounded-xl font-semibold text-sm flex items-center gap-3 shadow-md ${notification.type === 'success' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+      {notification?.type === 'error' && (
+        <FloatingErrorToast message={notification.msg} onClose={() => setNotification(null)} />
+      )}
+      {notification?.type === 'success' && (
+        <div className="max-w-6xl mx-auto px-4 py-3 mt-4 rounded-xl font-semibold text-sm flex items-center gap-3 shadow-md bg-emerald-50 border border-emerald-200 text-emerald-700">
           {notification.msg}
         </div>
       )}

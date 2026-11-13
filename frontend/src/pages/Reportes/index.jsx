@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import api from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
+import FloatingErrorToast from '../../components/FloatingErrorToast'
 import {
   ResponsiveContainer,
   LineChart,
@@ -244,16 +245,13 @@ export default function ReportesPage() {
 
       <div className="max-w-7xl mx-auto px-6 mt-6 space-y-6">
         {/* Notificaciones */}
-        {notification && (
-          <div
-            className={`p-4 rounded-xl flex items-center justify-between text-sm font-medium ${
-              notification.type === 'error'
-                ? 'bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-950/30 dark:border-rose-900/50 dark:text-rose-400'
-                : 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-900/50 dark:text-emerald-400'
-            }`}
-          >
+        {notification?.type === 'error' && (
+          <FloatingErrorToast message={notification.msg} onClose={() => setNotification(null)} />
+        )}
+        {notification?.type === 'success' && (
+          <div className="p-4 rounded-xl flex items-center justify-between text-sm font-medium bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-900/50 dark:text-emerald-400">
             <div className="flex items-center gap-2">
-              <span>{notification.type === 'error' ? '⚠️' : '✅'}</span>
+              <span>✅</span>
               <span>{notification.msg}</span>
             </div>
             <button onClick={() => setNotification(null)} className="text-xs underline opacity-70 hover:opacity-100">
