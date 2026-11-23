@@ -25,13 +25,7 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }) {
           {/* SIDEBAR HEADER */}
           <div className="flex items-center justify-between gap-2 px-6 py-5 lg:py-6 mt-1">
             <NavLink to="/" className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white font-bold text-xl shrink-0">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M4 12V20C4 20.5523 4.44772 21 5 21H19C19.5523 21 20 20.5523 20 20V12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
-                  <path d="M12 15L12 3" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
-                  <path d="M8 7L12 3L16 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
+              <img src="/logo.png" alt="Piscina Playa Azul" className="h-12 w-auto shrink-0" />
               <strong className="text-2xl font-bold text-slate-800 dark:text-white whitespace-nowrap">Playa Azul</strong>
             </NavLink>
           </div>

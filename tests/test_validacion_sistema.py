@@ -1,295 +1,270 @@
 """
 VALIDACIÓN INTEGRAL DEL SISTEMA - PISCINA OLÍMPICA PLAYA AZUL
-Suite automatizada de pruebas para el proyecto de grado:
-"Sistema de Monitoreo y Predicción de Calidad del Agua con IoT y LSTM"
+Suite automatizada de pruebas reales de integración y unidad contra el backend FastAPI,
+servicios de autenticación, dosificación, inventario, reportes, auditoría y modelo LSTM.
 Autora: Ayana Shakira Orosco Gutierrez
 """
 
-import math
-import re
-from datetime import datetime, timedelta
-import pytest
+from datetime import datetime
+from fastapi.testclient import TestClient
+
+from backend.app.main import app
+from backend.app.routers.auth import (
+    DURACION_BLOQUEO_MINUTOS,
+    MAX_INTENTOS_FALLIDOS,
+    _limpiar_intentos_login,
+)
+from backend.app.services.auth_service import (
+    generar_codigo_2fa,
+    hash_password,
+    verificar_password,
+)
+from backend.app.services.dosificacion_service import dosificacion_manager
+from backend.lstm.src.prediction.prediccion_service import (
+    predecir_cierre_dia,
+    seleccionar_franjas,
+)
+
+client = TestClient(app)
+CREDENCIALES_PRUEBA = {"correo": "shakiraog2005@gmail.com", "password": "admin1234"}
 
 
 # --------------------------------------------------------------------------
-# MÓDULO 1: SEGURIDAD, AUTENTICACIÓN Y ROLES (RBAC / 2FA)
+# MÓDULO 1: SEGURIDAD, AUTENTICACIÓN Y ROLES (RBAC / 2FA / BLOQUEO)
 # --------------------------------------------------------------------------
 
-def test_01_autenticacion_login_jwt_exitoso():
-    # Simula autenticación exitosa generando token JWT con payload y firma válida
-    payload = {
-        "sub": "admin@playaazul.bo",
-        "rol": "ADM",
-        "exp": (datetime.now() + timedelta(hours=8)).timestamp()
-    }
-    assert payload["sub"] == "admin@playaazul.bo"
-    assert payload["rol"] == "ADM"
-    assert payload["exp"] > datetime.now().timestamp()
+def test_01_autenticacion_login_exitoso():
+    resp = client.post("/api/v1/auth/login", json=CREDENCIALES_PRUEBA)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+    assert data["usuario"]["correo"] == CREDENCIALES_PRUEBA["correo"]
+    assert data["usuario"]["sigla_rol"] == "ADM"
 
 
-def test_02_autenticacion_rechazo_credenciales_invalidas():
-    # Verifica que contraseñas erróneas o usuarios bloqueados sean rechazados
-    def simular_login(usuario, password):
-        if usuario == "operador@playaazul.bo" and password == "CorrectPassword2026!":
-            return 200, "token_ok"
-        return 401, "Credenciales inválidas"
+def test_02_autenticacion_rechazo_credenciales_y_bloqueo_3_intentos():
+    correo_prueba = "oroscoshakira43@gmail.com"
+    _limpiar_intentos_login(correo_prueba)
+    try:
+        for _ in range(1, MAX_INTENTOS_FALLIDOS):
+            resp = client.post(
+                "/api/v1/auth/login",
+                json={"correo": correo_prueba, "password": "PasswordErronea123"},
+            )
+            assert resp.status_code == 401
+            assert "inválidos" in resp.json()["detail"].lower()
 
-    status, msg = simular_login("operador@playaazul.bo", "PasswordErronea123")
-    assert status == 401
-    assert "inválidas" in msg
-
-
-def test_03_autenticacion_verificacion_doble_factor_2fa_totp():
-    # Verifica validación de código OTP numérico de 6 dígitos en ventana de tiempo
-    token_otp = "482910"
-    assert len(token_otp) == 6
-    assert token_otp.isdigit()
-    assert int(token_otp) in range(0, 1000000)
-
-
-def test_04_autenticacion_control_roles_rbac_admin_operador():
-    # Verificación de matriz de permisos por roles RBAC
-    permisos = {
-        "ADM": {"monitoreo", "quimicos", "usuarios", "auditoria", "reportes"},
-        "OPE": {"monitoreo", "quimicos", "reportes"},
-        "CAJ": {"caja_aforo"}
-    }
-    assert "usuarios" in permisos["ADM"]
-    assert "usuarios" not in permisos["OPE"]
-    assert "caja_aforo" in permisos["CAJ"]
+        # 3er intento fallido debe disparar bloqueo temporal (HTTP 429)
+        resp_bloqueo = client.post(
+            "/api/v1/auth/login",
+            json={"correo": correo_prueba, "password": "PasswordErronea123"},
+        )
+        assert resp_bloqueo.status_code == 429
+        assert "bloqueado" in resp_bloqueo.json()["detail"].lower()
+        assert str(DURACION_BLOQUEO_MINUTOS) in resp_bloqueo.json()["detail"]
+    finally:
+        _limpiar_intentos_login(correo_prueba)
 
 
-def test_05_seguridad_recuperacion_contrasena_token_seguro():
-    # Validación de token temporal de restablecimiento de contraseña
-    reset_token = "tok_sec_9f83b2a1c4e7"
-    assert len(reset_token) >= 16
-    assert reset_token.startswith("tok_sec_")
+def test_03_autenticacion_generacion_codigo_2fa_6_digitos():
+    codigo = generar_codigo_2fa()
+    assert len(codigo) == 6
+    assert codigo.isdigit()
+    hashed = hash_password(codigo)
+    assert verificar_password(codigo, hashed) is True
+    assert verificar_password("000000" if codigo != "000000" else "111111", hashed) is False
+
+
+def test_04_autenticacion_control_roles_rbac_endpoints_protegidos():
+    # Sin token debe rechazar con 401/403
+    resp_sin_token = client.get("/api/v1/auth/users")
+    assert resp_sin_token.status_code in {401, 403}
+
+    # Con token real obtenido por /login de administrador debe permitir acceso (200)
+    login_resp = client.post("/api/v1/auth/login", json=CREDENCIALES_PRUEBA)
+    assert login_resp.status_code == 200
+    token = login_resp.json()["access_token"]
+    resp_adm = client.get(
+        "/api/v1/auth/users",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp_adm.status_code == 200
+
+
+def test_05_autenticacion_change_password_sin_sesion_rechazado():
+    resp = client.post(
+        "/api/v1/auth/change-password",
+        json={
+            "password_actual": "Temp1234",
+            "password_nueva": "NuevaClave123!",
+            "confirmar_password_nueva": "NuevaClave123!",
+        },
+    )
+    assert resp.status_code in {401, 403}
 
 
 # --------------------------------------------------------------------------
 # MÓDULO 2: ADQUISICIÓN IoT, TELEMETRÍA Y SENSORES
 # --------------------------------------------------------------------------
 
-def test_06_iot_telemetria_recepcion_trama_esp32_mqtt_json():
-    trama = {
-        "device_id": "ESP32_PISCINA_01",
-        "timestamp": 1793058600,
-        "ph": 7.24,
-        "turbidez_ntu": 1.85,
-        "temperatura": 27.5
-    }
-    assert trama["device_id"].startswith("ESP32")
-    assert 0 < trama["ph"] < 14
-    assert trama["turbidez_ntu"] >= 0
+def test_06_iot_health_y_estado_actual_real():
+    resp_health = client.get("/health")
+    assert resp_health.status_code == 200
+    assert resp_health.json()["status"] == "ok"
+
+    resp_estado = client.get("/api/estado_actual")
+    assert resp_estado.status_code == 200
+    data = resp_estado.json()
+    assert isinstance(data, dict)
 
 
-def test_07_iot_sensores_validacion_rango_ph_6_5_a_8_5():
-    # Norma NB-512 / Estándares de calidad de agua en piscinas: pH óptimo 7.2 - 7.6 (admisible 6.5 - 8.5)
-    def validar_ph(valor):
-        return 6.5 <= valor <= 8.5
-
-    assert validar_ph(7.2) is True
-    assert validar_ph(7.5) is True
-    assert validar_ph(5.8) is False
-    assert validar_ph(9.1) is False
+def test_07_iot_lecturas_historicas_endpoint_real():
+    resp = client.get("/lecturas")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, (list, dict))
 
 
-def test_08_iot_sensores_validacion_turbidez_ntu_calibracion():
-    # Turbidez en piscinas debe ser < 5.0 NTU (ideal < 2.0 NTU)
-    turbidez_lecturas = [0.8, 1.2, 1.9, 2.4]
-    for ntu in turbidez_lecturas:
-        assert 0.0 <= ntu <= 5.0
-
-
-def test_09_iot_sensores_monitoreo_temperatura_agua_pt100():
-    # Rango de confort térmico en piscina climatizada: 26°C a 30°C
-    temp_actual = 28.2
-    assert 26.0 <= temp_actual <= 30.0
-
-
-def test_10_iot_deteccion_anomalias_alertas_tiempo_real():
-    # Disparo de alarma si pH sale de la ventana segura
-    lectura_anomala = {"ph": 8.9, "turbidez": 6.8}
-    alertas = []
-    if lectura_anomala["ph"] > 8.5:
-        alertas.append("ALERTA_CRITICA_PH_ALTO")
-    if lectura_anomala["turbidez"] > 5.0:
-        alertas.append("ALERTA_TURBIDEZ_EXCEDIDA")
-    assert len(alertas) == 2
-    assert "ALERTA_CRITICA_PH_ALTO" in alertas
+def test_08_iot_alertas_tiempo_real():
+    resp = client.get("/api/alertas")
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)
 
 
 # --------------------------------------------------------------------------
 # MÓDULO 3: VISIÓN ARTIFICIAL (YOLOv8) Y CONTROL DE AFORO
 # --------------------------------------------------------------------------
 
-def test_11_vision_yolov8_deteccion_personas_espejo_agua():
-    detecciones = [
-        {"clase": "person", "confianza": 0.88, "bbox": [120, 150, 60, 110]},
-        {"clase": "person", "confianza": 0.92, "bbox": [200, 180, 55, 105]},
-        {"clase": "person", "confianza": 0.79, "bbox": [310, 220, 58, 112]}
-    ]
-    personas_validas = [d for d in detecciones if d["confianza"] >= 0.70]
-    assert len(personas_validas) == 3
+def test_09_vision_roi_camara_configuracion_real():
+    resp = client.get("/api/camera/roi")
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), dict)
 
 
-def test_12_vision_aforo_delimitacion_poligono_roi_piscina():
-    # Verifica que sólo se cuenten bañistas dentro de la zona ROI delimitada
-    roi_bounds = {"x_min": 50, "x_max": 500, "y_min": 50, "y_max": 400}
-    punto_en_piscina = (250, 200)
-    punto_en_gradas = (550, 420)
-
-    def punto_en_roi(pt):
-        return roi_bounds["x_min"] <= pt[0] <= roi_bounds["x_max"] and \
-               roi_bounds["y_min"] <= pt[1] <= roi_bounds["y_max"]
-
-    assert punto_en_roi(punto_en_piscina) is True
-    assert punto_en_roi(punto_en_gradas) is False
+def test_10_vision_aforo_camara_historial_real():
+    resp = client.get("/api/aforo-camara/historial")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "registros" in data
+    assert "resumen" in data
 
 
-def test_13_caja_aforo_manual_sincronizacion_taquilla():
-    ingresos = [{"hora": "09:15", "cantidad": 4}, {"hora": "09:30", "cantidad": 6}]
-    total_taquilla = sum(i["cantidad"] for i in ingresos)
-    assert total_taquilla == 10
-
-
-def test_14_aforo_densidad_ocupacion_control_limite_maximo():
-    capacidad_maxima = 80
-    banistas_actuales = 48
-    densidad_pct = (banistas_actuales / capacidad_maxima) * 100
-    assert densidad_pct == 60.0
-    assert banistas_actuales <= capacidad_maxima
+def test_11_caja_aforo_manual_historial_real():
+    resp = client.get("/api/aforo-manual/historial")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "registros" in data
+    assert "resumen" in data
 
 
 # --------------------------------------------------------------------------
 # MÓDULO 4: MODELO PREDICTIVO RECURRENTE (LSTM)
 # --------------------------------------------------------------------------
 
-def test_15_lstm_preprocesamiento_seleccion_franjas_horarias():
-    franjas_objetivo = ["08:00", "12:00", "16:00"]
-    assert len(franjas_objetivo) == 3
-    assert franjas_objetivo[0] == "08:00"
+def test_12_lstm_seleccion_franjas_real():
+    mediciones = [
+        {"fecha_hora": datetime(2026, 10, 6, 8, 5), "ph": 7.2, "turbidez": 1.5, "temperatura": 27.5},
+        {"fecha_hora": datetime(2026, 10, 6, 12, 0), "ph": 7.3, "turbidez": 1.8, "temperatura": 28.0},
+        {"fecha_hora": datetime(2026, 10, 6, 16, 10), "ph": 7.4, "turbidez": 2.0, "temperatura": 28.2},
+    ]
+    franjas = seleccionar_franjas(mediciones)
+    assert len(franjas) == 3
+    assert [f["hora"] for f in franjas] == ["08:00", "12:00", "16:00"]
+    assert all(f["capturada"] for f in franjas)
 
 
-def test_16_lstm_escalado_minmax_secuencias_multivariadas():
-    def minmax(val, vmin, vmax):
-        return (val - vmin) / (vmax - vmin)
-
-    ph_norm = minmax(7.4, 6.0, 9.0)
-    assert 0.0 <= ph_norm <= 1.0
-    assert round(ph_norm, 2) == 0.47
-
-
-def test_17_lstm_prediccion_ph_horizonte_24_horas():
-    # Predicción a 24 horas dentro de límites fisicoquímicos admisibles
-    prediccion_ph_t24 = 7.38
-    assert 6.8 <= prediccion_ph_t24 <= 7.8
-
-
-def test_18_lstm_prediccion_turbidez_correlacion_banistas():
-    # Mayor afluencia de bañistas incrementa la turbidez esperada
-    turbidez_base = 1.10
-    factor_banistas = 0.02
-    banistas = 45
-    turbidez_proyectada = turbidez_base + (banistas * factor_banistas)
-    assert turbidez_proyectada == 2.00
-    assert turbidez_proyectada > turbidez_base
+def test_13_lstm_prediccion_modelo_real():
+    mediciones = [
+        {"fecha_hora": datetime(2026, 10, 6, 8, 0), "ph": 7.25, "turbidez": 1.4, "temperatura": 27.5},
+        {"fecha_hora": datetime(2026, 10, 6, 12, 0), "ph": 7.32, "turbidez": 1.7, "temperatura": 28.0},
+        {"fecha_hora": datetime(2026, 10, 6, 16, 0), "ph": 7.38, "turbidez": 1.9, "temperatura": 28.1},
+    ]
+    resumen_parcial = {
+        "ph_prom": 7.32,
+        "turbidez_prom": 1.67,
+        "temp_prom": 27.9,
+        "banistas_total": 30,
+    }
+    resultado = predecir_cierre_dia(mediciones, resumen_parcial)
+    assert isinstance(resultado, dict)
+    assert len(resultado) > 0
 
 
-def test_19_lstm_validacion_metricas_rmse_mae_precision():
-    y_true = [7.20, 7.35, 7.40, 7.25]
-    y_pred = [7.22, 7.33, 7.42, 7.24]
-    mae = sum(abs(t - p) for t, p in zip(y_true, y_pred)) / len(y_true)
-    rmse = math.sqrt(sum((t - p) ** 2 for t, p in zip(y_true, y_pred)) / len(y_true))
-    assert mae < 0.05
-    assert rmse < 0.05
+def test_14_lstm_endpoint_pronostico_real():
+    resp = client.get("/api/pronostico")
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), dict)
 
 
 # --------------------------------------------------------------------------
 # MÓDULO 5: GESTIÓN DE INVENTARIO Y DOSIFICACIÓN DE QUÍMICOS
 # --------------------------------------------------------------------------
 
-def test_20_inventario_quimicos_catalogo_cloro_acido_clarif():
-    catalogo = {"CLO": "Hipoclorito de Sodio", "ACI": "Ácido Clorhídrico", "CLA": "Clarificador"}
-    assert "CLO" in catalogo
-    assert "ACI" in catalogo
-    assert len(catalogo) == 3
+def test_15_inventario_quimicos_catalogo_real():
+    resp = client.get("/api/v1/inventario/quimicos")
+    assert resp.status_code == 200
+    quimicos = resp.json()
+    assert isinstance(quimicos, list)
+    assert len(quimicos) > 0
 
 
-def test_21_inventario_quimicos_control_stock_minimo_alerta():
-    stock_actual = 8.5
-    stock_minimo = 15.0
-    alerta_stock = stock_actual <= stock_minimo
-    assert alerta_stock is True
+def test_16_dosificacion_calculo_real_cloro_y_otros():
+    calc_cloro = dosificacion_manager.calcular_volumen("Cloro", 100.0)
+    assert calc_cloro["litros_objetivo"] == 10.0
+    assert calc_cloro["es_cloro"] is True
+
+    calc_aluminio = dosificacion_manager.calcular_volumen("Sulfato de Aluminio", 1000.0)
+    assert calc_aluminio["litros_objetivo"] == 50.0
+    assert calc_aluminio["es_cloro"] is False
 
 
-def test_22_inventario_dosificacion_registro_quimico_aplicado():
-    stock_inicial = 50.0
-    dosis_aplicada = 4.5
-    stock_restante = stock_inicial - dosis_aplicada
-    assert stock_restante == 45.5
-
-
-def test_23_inventario_gestion_mermas_y_compras_balance():
-    stock_inicial = 100.0
-    compras = 25.0
-    dosificaciones = 15.0
-    mermas = 2.0
-    stock_final = stock_inicial + compras - dosificaciones - mermas
-    assert stock_final == 108.0
+def test_17_dosificacion_endpoint_estado_real():
+    resp = client.get("/api/dosificacion/estado")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "activa" in data
+    assert "bomba_encendida" in data
 
 
 # --------------------------------------------------------------------------
-# MÓDULO 6: REPORTES, ANALÍTICA Y EXPORTACIÓN EJECUTIVA
+# MÓDULO 6: REPORTES, ANALÍTICA Y EXPORTACIÓN PDF REAL
 # --------------------------------------------------------------------------
 
-def test_24_reportes_calidad_agua_indice_cumplimiento_nb512():
-    cumplimientos = [1.0, 1.0, 0.95, 1.0, 0.98]
-    indice_global = (sum(cumplimientos) / len(cumplimientos)) * 100
-    assert round(indice_global, 1) == 98.6
-    assert indice_global >= 90.0
+def test_18_reportes_calidad_agua_real():
+    resp = client.get("/api/v1/reportes/calidad-agua?tipo_rango=hoy")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "estadisticas" in data
+    assert "indice_global_cumplimiento" in data
 
 
-def test_25_reportes_consumo_quimicos_costos_estimados_bs():
-    consumo_kg = {"CLO": 12.0, "ACI": 5.0}
-    costo_unitario_bs = {"CLO": 18.5, "ACI": 22.0}
-    costo_total = sum(consumo_kg[k] * costo_unitario_bs[k] for k in consumo_kg)
-    assert costo_total == 332.0
+def test_19_reportes_quimicos_dosificacion_real():
+    resp = client.get("/api/v1/reportes/quimicos-dosificacion?tipo_rango=semana")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "costo_total_bs" in data
 
 
-def test_26_reportes_generacion_pdf_ejecutivo_reportlab():
-    pdf_header = "%PDF-1.4"
-    tamano_bytes = 48290
-    assert pdf_header.startswith("%PDF")
-    assert tamano_bytes > 1024
+def test_20_reportes_pdf_generacion_real():
+    resp = client.get("/api/v1/reportes/pdf?tipo_reporte=calidad_agua&tipo_rango=hoy")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content.startswith(b"%PDF")
 
 
 # --------------------------------------------------------------------------
-# MÓDULO 7: DASHBOARD TIEMPO REAL Y AUDITORÍA INMUTABLE
+# MÓDULO 7: AUDITORÍA REAL
 # --------------------------------------------------------------------------
 
-def test_27_dashboard_consolidacion_kpis_tiempo_real():
-    dashboard = {
-        "calidad_estado": "OPTIMO",
-        "ph_actual": 7.32,
-        "aforo_actual": 34,
-        "aforo_maximo": 80,
-        "alerta_activa": False
-    }
-    assert dashboard["calidad_estado"] == "OPTIMO"
-    assert dashboard["ph_actual"] == 7.32
-    assert dashboard["aforo_actual"] < dashboard["aforo_maximo"]
+def test_21_auditoria_logs_consulta_real():
+    login_resp = client.post("/api/v1/auth/login", json=CREDENCIALES_PRUEBA)
+    assert login_resp.status_code == 200
+    token = login_resp.json()["access_token"]
 
-
-def test_28_auditoria_registro_inmutable_mysql_trazabilidad():
-    registro_log = {
-        "id_log": 1042,
-        "usuario": "admin@playaazul.bo",
-        "accion": "REGISTRO_DOSIFICACION",
-        "modulo": "INVENTARIO",
-        "ip_origen": "192.168.1.45",
-        "timestamp": datetime.now().isoformat()
-    }
-    assert registro_log["id_log"] > 0
-    assert registro_log["accion"] == "REGISTRO_DOSIFICACION"
-    assert "playaazul.bo" in registro_log["usuario"]
+    resp = client.get(
+        "/api/v1/auditoria/logs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)

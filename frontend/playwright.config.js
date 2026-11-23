@@ -26,10 +26,19 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
-    command: 'npm run dev -- --host --port 5173',
-    url: 'http://localhost:5173',
-    reuseExistingServer: true,
-    timeout: 120 * 1000,
-  },
+  webServer: [
+    {
+      command: '..\\backend\\.venv\\Scripts\\uvicorn.exe app.main:app --host 127.0.0.1 --port 8000',
+      cwd: '../backend',
+      url: 'http://127.0.0.1:8000/health',
+      reuseExistingServer: true,
+      timeout: 120 * 1000,
+    },
+    {
+      command: 'npm run dev -- --host --port 5173',
+      url: 'http://localhost:5173',
+      reuseExistingServer: true,
+      timeout: 120 * 1000,
+    },
+  ],
 })

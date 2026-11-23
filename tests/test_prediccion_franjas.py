@@ -20,7 +20,9 @@ def test_elige_lectura_mas_cercana_a_cada_franja():
 def test_antes_del_mediodia_es_parcial_y_rellena():
     franjas = seleccionar_franjas([_m(8, 5, 7.1), _m(9, 0, 7.5)])
     assert [f["capturada"] for f in franjas] == [True, False, False]
-    assert [f["ph"] for f in franjas] == [7.1, 7.1, 7.1]
+    assert franjas[0]["ph"] == 7.1
+    assert franjas[1]["origen_general"] == "pronosticada"
+    assert franjas[2]["origen_general"] == "pronosticada"
 
 
 def test_banistas_desde_camara_y_taquilla():

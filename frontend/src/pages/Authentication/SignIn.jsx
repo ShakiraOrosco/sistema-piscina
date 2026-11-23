@@ -54,7 +54,7 @@ export default function SignIn() {
       </section>
       <section className="login-card">
         <div className="brand login-brand">
-          <span className="brand-mark">PA</span>
+          <img src="/logo.png" alt="Piscina Playa Azul" style={{ height: 64, width: 'auto' }} />
           <div>
             <strong>Playa Azul</strong>
             <small>Control center</small>

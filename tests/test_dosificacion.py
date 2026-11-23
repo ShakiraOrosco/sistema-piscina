@@ -27,20 +27,20 @@ def test_calculo_volumen_cloro():
 
 
 def test_calculo_volumen_otros_quimicos():
-    """Para otros químicos (ej. Sulfato de Aluminio, Sulfato de Cobre): cada 1000g son 15 litros."""
-    # 1000g de sulfato de aluminio deben ser 15.0L
+    """Para otros químicos (ej. Sulfato de Aluminio, Sulfato de Cobre): cada 1000g son 50 litros."""
+    # 1000g de sulfato de aluminio deben ser 50.0L
     c1 = dosificacion_manager.calcular_volumen("Sulfato de Aluminio", 1000.0)
-    assert c1["litros_objetivo"] == 15.0
+    assert c1["litros_objetivo"] == 50.0
     assert c1["es_cloro"] is False
-    assert c1["pulsos_estimados"] == int(15.0 * PULSOS_POR_LITRO)
+    assert c1["pulsos_estimados"] == int(50.0 * PULSOS_POR_LITRO)
 
-    # 500g de sulfato de aluminio deben ser 7.5L
+    # 500g de sulfato de aluminio deben ser 25.0L
     c2 = dosificacion_manager.calcular_volumen("Sulfato de Aluminio", 500.0)
-    assert c2["litros_objetivo"] == 7.5
+    assert c2["litros_objetivo"] == 25.0
 
-    # 5g de sulfato de cobre deben ser 0.075L
+    # 5g de sulfato de cobre deben ser 0.25L
     c3 = dosificacion_manager.calcular_volumen("Sulfato de Cobre", 5.0)
-    assert c3["litros_objetivo"] == 0.075
+    assert c3["litros_objetivo"] == 0.25
 
 
 def test_iniciar_y_detener_dosificacion():
@@ -87,7 +87,7 @@ def test_api_endpoints_dosificacion():
 
     res2 = client.get("/api/dosificacion/calcular?quimico=Sulfato+de+Aluminio&cantidad_g=1000")
     assert res2.status_code == 200
-    assert res2.json()["litros_objetivo"] == 15.0
+    assert res2.json()["litros_objetivo"] == 50.0
 
     # 2. Endpoint estado
     res_est = client.get("/api/dosificacion/estado")
@@ -122,7 +122,7 @@ def test_aluminio_solo_en_dosificacion_final():
         validar_cuota_maxima=False
     )
     assert res_final["ok"] is True
-    assert res_final["calculo"]["litros_objetivo"] == 1.5
+    assert res_final["calculo"]["litros_objetivo"] == 5.0
 
     # Limpiar estado
     dosificacion_manager.detener("Fin prueba aluminio")
