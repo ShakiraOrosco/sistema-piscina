@@ -32,8 +32,14 @@ from .routers.dosificacion import router as dosificacion_router
 
 try:
     from detector_camara import start_camera_service_background, stop_camera_service_background
-except ImportError:
-    from backend.detector_camara import start_camera_service_background, stop_camera_service_background
+except Exception:
+    try:
+        from backend.detector_camara import start_camera_service_background, stop_camera_service_background
+    except Exception as e:
+        def start_camera_service_background():
+            print(f"[Aviso] Servicio de cámara no disponible: {e}")
+        def stop_camera_service_background():
+            pass
 
 
 
@@ -60,18 +66,25 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Configuración flexible de CORS para permitir acceso desde cualquier dispositivo (red local, docker, etc.)
+cors_origins_env = os.getenv("CORS_ORIGINS", "*").strip()
+if cors_origins_env == "*" or not cors_origins_env:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"^https?://.*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    origins = [orig.strip() for orig in cors_origins_env.split(",") if orig.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.include_router(router)
 app.include_router(auth_router)

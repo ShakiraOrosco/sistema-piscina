@@ -53,69 +53,91 @@ def generar_codigo_2fa() -> str:
 
 def enviar_codigo_2fa(destinatario: str, codigo: str) -> None:
     if not settings.SMTP_HOST or not settings.SMTP_FROM:
-        raise RuntimeError("El correo no está configurado. Define SMTP_HOST y SMTP_FROM")
+        print(f"\n=======================================================")
+        print(f"🔐 [2FA] Servidor SMTP no configurado en .env")
+        print(f"👉 Tu código de verificación para {destinatario} es: {codigo}")
+        print(f"=======================================================\n")
+        return
 
-    mensaje = EmailMessage()
-    mensaje["Subject"] = "Código de acceso - Piscina Playa Azul"
-    mensaje["From"] = settings.SMTP_FROM
-    mensaje["To"] = destinatario
-    mensaje.set_content(
-        "Tu código de verificación para acceder al sistema es: "
-        f"{codigo}\n\nEste código vence en 10 minutos."
-    )
+    try:
+        mensaje = EmailMessage()
+        mensaje["Subject"] = "Código de acceso - Piscina Playa Azul"
+        mensaje["From"] = settings.SMTP_FROM
+        mensaje["To"] = destinatario
+        mensaje.set_content(
+            "Tu código de verificación para acceder al sistema es: "
+            f"{codigo}\n\nEste código vence en 10 minutos."
+        )
 
-    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as servidor:
-        if settings.SMTP_USE_TLS:
-            servidor.starttls()
-        if settings.SMTP_USER:
-            servidor.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-        servidor.send_message(mensaje)
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as servidor:
+            if settings.SMTP_USE_TLS:
+                servidor.starttls()
+            if settings.SMTP_USER:
+                servidor.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            servidor.send_message(mensaje)
+    except Exception as e:
+        print(f"\n⚠️ [SMTP Error] No se pudo enviar el correo 2FA a {destinatario}: {e}")
+        print(f"👉 CÓDIGO 2FA de respaldo: {codigo}\n")
 
 
 def enviar_password_temporal(destinatario: str, nombre: str, password: str) -> None:
     if not settings.SMTP_HOST or not settings.SMTP_FROM:
-        raise RuntimeError("El correo no está configurado. Define SMTP_HOST y SMTP_FROM")
+        print(f"\n=======================================================")
+        print(f"🔑 [AUTH] Contraseña temporal para {destinatario} ({nombre}): {password}")
+        print(f"=======================================================\n")
+        return
 
-    mensaje = EmailMessage()
-    mensaje["Subject"] = "Acceso inicial - Piscina Playa Azul"
-    mensaje["From"] = settings.SMTP_FROM
-    mensaje["To"] = destinatario
-    mensaje.set_content(
-        f"Hola {nombre},\n\n"
-        "Se creó tu usuario para el sistema de la piscina.\n"
-        f"Contraseña temporal: {password}\n\n"
-        "Usa esta contraseña para iniciar sesión. El sistema te pedirá cambiarla "
-        "antes de continuar.\n"
-    )
+    try:
+        mensaje = EmailMessage()
+        mensaje["Subject"] = "Acceso inicial - Piscina Playa Azul"
+        mensaje["From"] = settings.SMTP_FROM
+        mensaje["To"] = destinatario
+        mensaje.set_content(
+            f"Hola {nombre},\n\n"
+            "Se creó tu usuario para el sistema de la piscina.\n"
+            f"Contraseña temporal: {password}\n\n"
+            "Usa esta contraseña para iniciar sesión. El sistema te pedirá cambiarla "
+            "antes de continuar.\n"
+        )
 
-    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as servidor:
-        if settings.SMTP_USE_TLS:
-            servidor.starttls()
-        if settings.SMTP_USER:
-            servidor.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-        servidor.send_message(mensaje)
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as servidor:
+            if settings.SMTP_USE_TLS:
+                servidor.starttls()
+            if settings.SMTP_USER:
+                servidor.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            servidor.send_message(mensaje)
+    except Exception as e:
+        print(f"⚠️ [SMTP Error] No se pudo enviar la contraseña temporal a {destinatario}: {e}")
+        print(f"👉 Contraseña temporal de respaldo: {password}\n")
 
 
 def enviar_password_recuperacion(destinatario: str, nombre: str, password: str) -> None:
     if not settings.SMTP_HOST or not settings.SMTP_FROM:
-        raise RuntimeError("El correo no está configurado. Define SMTP_HOST y SMTP_FROM")
+        print(f"\n=======================================================")
+        print(f"🔑 [AUTH] Recuperación de contraseña para {destinatario} ({nombre}): {password}")
+        print(f"=======================================================\n")
+        return
 
-    mensaje = EmailMessage()
-    mensaje["Subject"] = "Restablecimiento de contraseña - Piscina Playa Azul"
-    mensaje["From"] = settings.SMTP_FROM
-    mensaje["To"] = destinatario
-    mensaje.set_content(
-        f"Hola {nombre},\n\n"
-        "Has solicitado restablecer tu contraseña para ingresar al sistema de la piscina.\n\n"
-        f"Tu nueva contraseña temporal es: {password}\n\n"
-        "Usa esta contraseña para iniciar sesión. Al ingresar, el sistema te solicitará "
-        "crear una nueva contraseña personalizada para tu seguridad.\n\n"
-        "Si no solicitaste este cambio, por favor ponte en contacto con el administrador."
-    )
+    try:
+        mensaje = EmailMessage()
+        mensaje["Subject"] = "Restablecimiento de contraseña - Piscina Playa Azul"
+        mensaje["From"] = settings.SMTP_FROM
+        mensaje["To"] = destinatario
+        mensaje.set_content(
+            f"Hola {nombre},\n\n"
+            "Has solicitado restablecer tu contraseña para ingresar al sistema de la piscina.\n\n"
+            f"Tu nueva contraseña temporal es: {password}\n\n"
+            "Usa esta contraseña para iniciar sesión. Al ingresar, el sistema te solicitará "
+            "crear una nueva contraseña personalizada para tu seguridad.\n\n"
+            "Si no solicitaste este cambio, por favor ponte en contacto con el administrador."
+        )
 
-    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as servidor:
-        if settings.SMTP_USE_TLS:
-            servidor.starttls()
-        if settings.SMTP_USER:
-            servidor.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-        servidor.send_message(mensaje)
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as servidor:
+            if settings.SMTP_USE_TLS:
+                servidor.starttls()
+            if settings.SMTP_USER:
+                servidor.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            servidor.send_message(mensaje)
+    except Exception as e:
+        print(f"⚠️ [SMTP Error] No se pudo enviar la recuperación a {destinatario}: {e}")
+        print(f"👉 Contraseña temporal de respaldo: {password}\n")
