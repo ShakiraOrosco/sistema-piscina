@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Manual de Instalación - Proyecto de Grado</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 20mm;
+    }
+    body {
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: #2d3748;
+      line-height: 1.6;
+      background: #f7fafc;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 850px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 40px 50px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      border-radius: 8px;
+    }
+    .print-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #ebf8ff;
+      border: 1px solid #bee3f8;
+      padding: 12px 20px;
+      border-radius: 6px;
+      margin-bottom: 25px;
+    }
+    .btn-print {
+      background: #2b6cb0;
+      color: #ffffff;
+      border: none;
+      padding: 8px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-print:hover {
+      background: #2c5282;
+    }
+    /* Carátula */
+    .cover {
+      text-align: center;
+      padding: 40px 0 60px 0;
+      border-bottom: 2px solid #e2e8f0;
+      page-break-after: always;
+    }
+    .cover h1 {
+      color: #1a365d;
+      font-size: 20px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .cover .subtitle {
+      color: #4a5568;
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 40px;
+    }
+    .cover .badge {
+      display: inline-block;
+      background: #edf2f7;
+      color: #2b6cb0;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 4px 14px;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+      margin-bottom: 20px;
+    }
+    .cover .project-title {
+      color: #1a365d;
+      font-size: 24px;
+      font-weight: 800;
+      line-height: 1.3;
+      margin: 20px auto;
+      max-width: 700px;
+    }
+    .cover .doc-type {
+      color: #3182ce;
+      font-size: 17px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 25px;
+    }
+    .meta-card {
+      margin: 50px auto 0 auto;
+      max-width: 550px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 20px 25px;
+      text-align: left;
+    }
+    .meta-row {
+      display: flex;
+      padding: 6px 0;
+      border-bottom: 1px dashed #e2e8f0;
+      font-size: 14px;
+    }
+    .meta-row:last-child {
+      border-bottom: none;
+    }
+    .meta-label {
+      width: 170px;
+      font-weight: 700;
+      color: #2d3748;
+    }
+    .meta-val {
+      flex: 1;
+      color: #4a5568;
+    }
+
+    /* Contenido */
+    h2 {
+      color: #1a365d;
+      font-size: 20px;
+      border-bottom: 2px solid #3182ce;
+      padding-bottom: 6px;
+      margin-top: 35px;
+      margin-bottom: 15px;
+    }
+    h3 {
+      color: #2b6cb0;
+      font-size: 16px;
+      margin-top: 25px;
+      margin-bottom: 10px;
+    }
+    p, li {
+      font-size: 14.5px;
+      color: #374151;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 14px;
+    }
+    th {
+      background: #1a365d;
+      color: #ffffff;
+      padding: 10px 12px;
+      text-align: left;
+      font-weight: 600;
+    }
+    td {
+      padding: 9px 12px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    tr:nth-child(even) td {
+      background: #f7fafc;
+    }
+    pre, code {
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 13px;
+    }
+    pre {
+      background: #1a202c;
+      color: #e2e8f0;
+      padding: 14px 18px;
+      border-radius: 6px;
+      overflow-x: auto;
+      line-height: 1.45;
+    }
+    code.inline {
+      background: #edf2f7;
+      color: #b83280;
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+    .alert-box {
+      background: #ebf8ff;
+      border-left: 4px solid #3182ce;
+      padding: 12px 18px;
+      border-radius: 0 6px 6px 0;
+      margin: 18px 0;
+    }
+    .alert-box strong {
+      color: #2b6cb0;
+    }
+    .folder-tree {
+      background: #2d3748;
+      color: #f7fafc;
+      padding: 18px;
+      border-radius: 6px;
+      font-family: 'Consolas', monospace;
+      font-size: 12.5px;
+      line-height: 1.4;
+    }
+    .page-break {
+      page-break-after: always;
+    }
+
+    @media print {
+      body {
+        background: #ffffff;
+        padding: 0;
+      }
+      .container {
+        box-shadow: none;
+        padding: 0;
+        max-width: 100%;
+      }
+      .print-bar {
+        display: none;
+      }
+      pre {
+        background: #f7fafc !important;
+        color: #1a202c !important;
+        border: 1px solid #cbd5e0;
+      }
+      .folder-tree {
+        background: #f7fafc !important;
+        color: #1a202c !important;
+        border: 1px solid #cbd5e0;
+      }
+      th {
+        background: #1a365d !important;
+        color: #ffffff !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="print-bar">
+    <div><strong>Vista de Documento Final:</strong> Manual de Instalación y Entrega de Proyecto de Grado</div>
+    <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
+  </div>
+
+  <!-- CARÁTULA -->
+  <div class="cover">
+    <div class="badge">PROYECTO DE GRADO FINAL</div>
+    <h1>UNIVERSIDAD / INSTITUCIÓN ACADÉMICA</h1>
+    <div class="subtitle">FACULTAD DE CIENCIAS Y TECNOLOGÍA — CARRERA DE INGENIERÍA DE SISTEMAS</div>
+
+    <div class="project-title">
+      “SISTEMA DE MONITOREO Y DOSIFICACIÓN AUTOMÁTICA DE QUÍMICOS PARA PISCINAS MEDIANTE REDES NEURONALES BiLSTM E INTERNET DE LAS COSAS”
+    </div>
+
+    <div class="doc-type">MANUAL DE INSTALACIÓN, CONFIGURACIÓN Y ENTREGA DIGITAL</div>
+
+    <div class="meta-card">
+      <div class="meta-row">
+        <div class="meta-label">Postulante:</div>
+        <div class="meta-val"><strong>Shakira Orosco Gutierrez</strong></div>
+      </div>
+      <div class="meta-row">
+        <div class="meta-label">Modalidad:</div>
+        <div class="meta-val">Proyecto de Grado / Tesis de Grado</div>
+      </div>
+      <div class="meta-row">
+        <div class="meta-label">Fecha de Entrega:</div>
+        <div class="meta-val">02 de Diciembre de 2026 - 18:30</div>
+      </div>
+      <div class="meta-row">
+        <div class="meta-label">Versión de Software:</div>
+        <div class="meta-val">1.0.0 (Release para Evaluación)</div>
+      </div>
+      <div class="meta-row">
+        <div class="meta-label">Arquitectura:</div>
+        <div class="meta-val">Cliente-Servidor (FastAPI + React 19 + PyTorch + Supabase Cloud)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECCIÓN 1 -->
+  <h2>1. Introducción y Arquitectura del Sistema</h2>
+  <p>
+    El presente manual proporciona instrucciones detalladas para la instalación, configuración y puesta en marcha del 
+    <strong>Sistema de Monitoreo y Dosificación Automática de Químicos para Piscinas</strong>. El software ha sido construido bajo una 
+    <strong>Arquitectura Cliente-Servidor desacoplada</strong>:
+  </p>
+  <ul>
+    <li><strong>Servidor (Backend & IA):</strong> Desarrollado en Python con <strong>FastAPI</strong>, implementa una red neuronal recurrente bidireccional <strong>BiLSTM (PyTorch)</strong> para predicción a 24/48 horas de pH, turbidez y temperatura, con modelos complementarios en <strong>XGBoost</strong> y servicios de telemetría IoT.</li>
+    <li><strong>Cliente (Frontend SPA):</strong> Single Page Application construida con <strong>React 19</strong>, <strong>Vite</strong> y <strong>TailwindCSS</strong>, con visualización de telemetría en tiempo real y gráficos dinámicos interactivos.</li>
+    <li><strong>Base de Datos Cloud:</strong> Alojada en <strong>PostgreSQL en Supabase Cloud</strong> bajo el esquema relacional <code>piscina_lstm3</code>.</li>
+    <li><strong>Módulo de Hardware IoT:</strong> Integración de microcontroladores <strong>ESP32</strong>, sensores sumergibles, actuadores peristálticos y simulador de laboratorio.</li>
+  </ul>
+
+  <!-- SECCIÓN 2 -->
+  <h2>2. Requisitos Previos</h2>
+  <h3>2.1 Requisitos del Sistema (Hardware)</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Componente</th>
+        <th>Requisito Mínimo</th>
+        <th>Requisito Recomendado</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Sistema Operativo</strong></td>
+        <td>Windows 10/11 (64-bit), Ubuntu 20.04+, macOS 12+</td>
+        <td>Windows 11 Pro (64-bit) o Ubuntu 22.04 LTS</td>
+      </tr>
+      <tr>
+        <td><strong>Procesador (CPU)</strong></td>
+        <td>Intel Core i3 / AMD Ryzen 3 (2.0 GHz, 2 núcleos)</td>
+        <td>Intel Core i5/i7 o Ryzen 5/7 (4+ núcleos)</td>
+      </tr>
+      <tr>
+        <td><strong>Memoria RAM</strong></td>
+        <td>4 GB</td>
+        <td>8 GB o 16 GB (para Docker e inferencia de IA)</td>
+      </tr>
+      <tr>
+        <td><strong>Espacio en Disco</strong></td>
+        <td>5 GB de almacenamiento libre</td>
+        <td>15 GB libres (SSD recomendado)</td>
+      </tr>
+      <tr>
+        <td><strong>Conectividad</strong></td>
+        <td>Conexión a Internet (acceso a Supabase Cloud)</td>
+        <td>Red LAN / Wi-Fi para acceso multidispositivo</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>2.2 Dependencias Necesarias (Software)</h3>
+  <ul>
+    <li><strong>Python:</strong> Versión <strong>3.10 o 3.11</strong> de 64 bits (con <code>pip</code> y <code>venv</code>).</li>
+    <li><strong>Node.js:</strong> Versión <strong>20.x LTS o 22.x LTS</strong> (con <code>npm</code> v10+).</li>
+    <li><strong>Docker & Docker Compose:</strong> Opcional, pero recomendado para despliegue en un clic.</li>
+    <li><strong>Base de Datos:</strong> Conectividad HTTPS/PostgreSQL hacia el clúster de Supabase Cloud.</li>
+  </ul>
+
+  <div class="page-break"></div>
+
+  <!-- SECCIÓN 3 -->
+  <h2>3. Procedimiento de Instalación</h2>
+
+  <h3>3.1 Despliegue Rápido con Docker (Recomendado Multiplataforma)</h3>
+  <p>Con Docker Desktop activo en Windows o Linux, sitúese en la raíz del proyecto y ejecute:</p>
+  <pre>cd sistema-piscina
+docker compose up -d --build</pre>
+  <p>Esto compila y levanta automáticamente los servicios:</p>
+  <ul>
+    <li><strong>Frontend (React + Nginx):</strong> <code>http://localhost:3000</code></li>
+    <li><strong>Backend (FastAPI + PyTorch):</strong> <code>http://localhost:8000/docs</code></li>
+    <li><strong>Acceso desde otros dispositivos:</strong> <code>http://&lt;IP-DEL-SERVIDOR&gt;:3000</code></li>
+  </ul>
+
+  <h3>3.2 Instalación Nativa en Windows (Paso a Paso)</h3>
+  <p><strong>Paso 1: Backend (FastAPI + IA):</strong></p>
+  <pre>cd sistema-piscina\backend
+python -m venv venv
+.\venv\Scripts\activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+cd ..
+python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload</pre>
+
+  <p><strong>Paso 2: Frontend (React + Vite) en una segunda consola:</strong></p>
+  <pre>cd sistema-piscina\frontend
+npm install
+npm run dev -- --host 0.0.0.0</pre>
+
+  <h3>3.3 Instalación en Linux (Ubuntu / Debian)</h3>
+  <pre># 1. Dependencias del sistema
+sudo apt update && sudo apt install -y python3 python3-pip python3-venv git curl nodejs npm
+
+# 2. Servidor Backend
+cd sistema-piscina/backend
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+cd .. && python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 &
+
+# 3. Cliente Frontend
+cd sistema-piscina/frontend
+npm install && npm run build
+npm run preview -- --host 0.0.0.0 --port 3000</pre>
+
+  <h3>3.4 Acceso y Operación en Dispositivos Móviles (Android / iOS)</h3>
+  <p>
+    El frontend está diseñado bajo estándares <strong>PWA y Responsive Design</strong>. Los operadores pueden usar el sistema 
+    desde cualquier teléfono móvil conectado a la red Wi-Fi:
+  </p>
+  <ol>
+    <li>Conecte el móvil a la misma red Wi-Fi de la computadora servidora.</li>
+    <li>Obtenga la dirección IP local de la PC con <code>ipconfig</code> (ejemplo: <code>192.168.1.50</code>).</li>
+    <li>Abra Google Chrome (Android) o Safari (iOS) e ingrese a: <code>http://192.168.1.50:3000</code></li>
+    <li>Seleccione <strong>"Agregar a la pantalla principal"</strong> para instalarlo en modo aplicación nativa sin barra de direcciones.</li>
+  </ol>
+
+  <!-- SECCIÓN 4 -->
+  <h2>4. Configuración Adicional y Servicios en la Nube</h2>
+  <h3>4.1 Conexión a Base de Datos Supabase Cloud</h3>
+  <p>El archivo <code>.env</code> en la raíz del proyecto configura la conexión directa al clúster PostgreSQL:</p>
+  <pre>SUPABASE_DB_HOST=aws-0-us-east-2.pooler.supabase.com
+SUPABASE_DB_PORT=5432
+SUPABASE_DB_NAME=postgres
+SUPABASE_DB_USER=postgres.magihsdcxcjmfdjechvc
+SUPABASE_DB_PASSWORD=LSTM_piscinaIOT
+JWT_SECRET=cambia-esta-clave-en-produccion-usa-una-clave-propia
+JWT_EXPIRES_MINUTES=60
+CORS_ORIGINS=*</pre>
+
+  <h3>4.2 Credenciales Iniciales de Acceso para Evaluación</h3>
+  <div class="alert-box">
+    <strong>Usuario Administrador (ADM):</strong><br>
+    • <strong>URL:</strong> http://localhost:3000<br>
+    • <strong>Correo Electrónico:</strong> shakiraog2005@gmail.com<br>
+    • <strong>Contraseña:</strong> admin1234<br>
+    • <strong>Privilegios:</strong> Control total de inventarios, dosificación, monitoreo en vivo, caja y auditoría.
+  </div>
+
+  <h3>4.3 Simulación de Telemetría IoT en Vivo</h3>
+  <p>Para probar las gráficas dinámicas de la interfaz sin sumergir sensores físicos:</p>
+  <pre>python backend/iot/simulador_api.py --escenario normal --pausa 3</pre>
+
+  <div class="page-break"></div>
+
+  <!-- SECCIÓN 5 -->
+  <h2>5. Solución de Problemas Comunes</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Problema</th>
+        <th>Causa</th>
+        <th>Solución</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Fallo de conexión a Supabase</strong></td>
+        <td>Puerto 5432 bloqueado por el firewall.</td>
+        <td>Cambiar en <code>.env</code> a <code>SUPABASE_DB_PORT=6543</code> (Session Pooler) y reiniciar el backend.</td>
+      </tr>
+      <tr>
+        <td><strong>Puerto 8000 o 3000 ocupado</strong></td>
+        <td>Servicio anterior quedó en segundo plano.</td>
+        <td>En Windows ejecutar <code>taskkill /F /IM python.exe /IM node.exe</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>Error CORS en navegador</strong></td>
+        <td>Petición desde IP no permitida.</td>
+        <td>Verificar que <code>CORS_ORIGINS=*</code> esté configurado en <code>.env</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>Bloqueo por intentos fallidos</strong></td>
+        <td>Más de 3 contraseñas erróneas.</td>
+        <td>Mecanismo de seguridad antibruerza. Espere 5 minutos para el desbloqueo automático.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- SECCIÓN 6 -->
+  <h2>6. Guía para la Entrega en Digital del Proyecto de Grado</h2>
+  <p>
+    En cumplimiento con las normas de titulación, la entrega física se realiza en memoria Flash USB o DVD-R (no sujeto a devolución):
+  </p>
+
+  <h3>6.1 Rotulado del Dispositivo Físico</h3>
+  <pre>========================================================================
+             ENTREGA DIGITAL FINAL - PROYECTO DE GRADO
+ESTUDIANTE:            Shakira Orosco Gutierrez
+CARRERA:               Ingeniería de Sistemas
+PROYECTO:              Sistema de Monitoreo y Dosificación Automática de
+                       Químicos para Piscinas mediante Redes Neuronales
+                       BiLSTM e IoT
+FECHA LÍMITE:          02 de Diciembre de 2026 - 18:30
+========================================================================</pre>
+
+  <h3>6.2 Estructura de Carpetas en la Memoria USB / DVD</h3>
+  <div class="folder-tree">
+SISTEMA_PISCINA_IOT_LSTM/
+├── 1_Codigo_Fuente/
+│   ├── Backend/                 (Código FastAPI, PyTorch BiLSTM y endpoints)
+│   ├── Frontend/                (Código React 19, componentes y Vite)
+│   ├── IoT_Firmware/            (Firmware para microcontroladores ESP32)
+│   ├── docker-compose.yml       (Despliegue unificado con contenedores)
+│   └── .env.example             (Variables de entorno de muestra)
+│
+├── 2_Backups_BD/
+│   ├── backup_piscina_lstm3.sql (Respaldo completo de la BD Supabase)
+│   └── auth_migration.sql       (Script de auditoría y roles)
+│
+├── 3_Datasets/
+│   ├── dataset_piscina.csv            (Historial fisicoquímico)
+│   ├── dataset_mediciones_horas.csv   (Mediciones horarias)
+│   └── dataset_dosificacion_diaria.csv(Aplicación de químicos)
+│
+├── 4_Ejecutables_Demo/
+│   ├── INICIAR_SISTEMA_WINDOWS.bat    (Script de inicio rápido de 1 clic)
+│   ├── INICIAR_SISTEMA_LINUX.sh       (Script de inicio para Linux)
+│   └── Modelos_Entrenados/            (Archivos de pesos .pth y .joblib)
+│
+└── 5_Manuales_Documentacion/
+    ├── Manual_de_Instalacion.pdf      (El presente manual impreso / digital)
+    ├── Manual_de_Usuario.pdf          (Guía para operadores y administradores)
+    └── Pruebas_Iteracion_1_a_5.xlsx   (Matrices de validación y calidad)
+  </div>
+
+</div>
+
+</body>
+</html>
