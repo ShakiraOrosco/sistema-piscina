@@ -91,3 +91,35 @@ def configurar_dispositivo(payload: ConfigurarDispositivoPayload):
         "serial_port": dosificacion_manager.serial_port,
         "mensaje": "Configuración de hardware actualizada"
     }
+
+
+class ReportarFallaDosificacionPayload(BaseModel):
+    dispositivo: str = Field("Bomba / Electroválvula ESP32", description="Nombre del dispositivo de dosificación que falló")
+    detalle: str = Field(..., description="Descripción de la falla detectada")
+
+
+@router.post("/reportar-falla")
+def reportar_falla_dosificacion(payload: ReportarFallaDosificacionPayload):
+    """Registra una falla de hardware en el módulo de dosificación y envía alerta por Correo y WhatsApp."""
+    from ..services.notificacion_service import notificar_falla_dispositivo
+
+    with dosificacion_manager._lock:
+        dosificacion_manager.estado["error_hardware"] = payload.detalle
+        if not dosificacion_manager.estado["activa"]:
+            dosificacion_manager.estado["modo"] = "error"
+            dosificacion_manager.estado["mensaje"] = f"Falla detectada en {payload.dispositivo}: {payload.detalle}"
+
+    notificacion = notificar_falla_dispositivo(
+        clave_falla=f"dosificacion_falla_{payload.dispositivo.lower().replace(' ', '_')}",
+        titulo=f"Falla en dispositivo de dosificación: {payload.dispositivo}",
+        modulo="Dosificación",
+        dispositivo=payload.dispositivo,
+        detalle=payload.detalle,
+        forzar=True,
+    )
+    return {
+        "ok": True,
+        "mensaje": "Alerta de falla de dosificación registrada y enviada por Correo y WhatsApp",
+        "notificacion": notificacion,
+        "estado": dosificacion_manager.obtener_estado(),
+    }

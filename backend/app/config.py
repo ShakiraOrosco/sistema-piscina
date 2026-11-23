@@ -21,6 +21,12 @@ class Settings:
     SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER)
     SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
 
+    # Configuración de alertas (Correo + WhatsApp CallMeBot)
+    ALERT_EMAIL_TO = os.getenv("ALERT_EMAIL_TO", "")
+    WHATSAPP_PHONE = os.getenv("WHATSAPP_PHONE", "")
+    WHATSAPP_APIKEY = os.getenv("WHATSAPP_APIKEY", "")
+    ALERT_COOLDOWN_MINUTES = int(os.getenv("ALERT_COOLDOWN_MINUTES", "15"))
+
     @property
     def database_url(self) -> str:
         return (

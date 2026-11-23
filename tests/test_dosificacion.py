@@ -126,3 +126,73 @@ def test_aluminio_solo_en_dosificacion_final():
 
     # Limpiar estado
     dosificacion_manager.detener("Fin prueba aluminio")
+
+
+def test_notificacion_falla_monitoreo_y_dosificacion(monkeypatch):
+    """Verifica que ante una falla de monitoreo o de dosificación se dispare la alerta a Correo y WhatsApp."""
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+    from backend.app.services import notificacion_service
+
+    envios_correo = []
+    envios_whatsapp = []
+
+    def mock_correo(**kwargs):
+        envios_correo.append(kwargs)
+        return {"enviado": True, "destinatarios": ["admin@piscina.com"]}
+
+    def mock_whatsapp(**kwargs):
+        envios_whatsapp.append(kwargs)
+        return {"enviado": True, "telefono": "+59170000000"}
+
+    monkeypatch.setattr(notificacion_service, "enviar_correo_alerta", mock_correo)
+    monkeypatch.setattr(notificacion_service, "enviar_whatsapp_alerta", mock_whatsapp)
+    notificacion_service.limpiar_cooldown_falla()
+
+    # 1. Notificación síncrona directa por falla de sensor de monitoreo
+    res = notificacion_service.notificar_falla_dispositivo(
+        clave_falla="sensor_ph_sin_dato",
+        titulo="Falla en Sensor de pH",
+        modulo="Monitoreo",
+        dispositivo="Sensor de pH (ESP32)",
+        detalle="El sensor de pH no envió dato (NULL).",
+        en_background=False,
+    )
+    assert res is not None
+    assert res["correo"]["enviado"] is True
+    assert res["whatsapp"]["enviado"] is True
+    assert len(envios_correo) == 1
+    assert len(envios_whatsapp) == 1
+
+    # 2. Cooldown activo evita duplicar envío inmediato con la misma clave
+    res_dup = notificacion_service.notificar_falla_dispositivo(
+        clave_falla="sensor_ph_sin_dato",
+        titulo="Falla en Sensor de pH",
+        modulo="Monitoreo",
+        dispositivo="Sensor de pH (ESP32)",
+        detalle="El sensor de pH no envió dato (NULL).",
+        en_background=False,
+    )
+    assert res_dup is None
+    assert len(envios_correo) == 1
+
+    # 3. Endpoint de reporte de falla de dosificación y reflejo en alertas del dashboard
+    client = TestClient(app)
+    res_api = client.post(
+        "/api/dosificacion/reportar-falla",
+        json={
+            "dispositivo": "Bomba Dosificadora Pin 26",
+            "detalle": "Sin respuesta del relé de la bomba dosificadora",
+        },
+    )
+    assert res_api.status_code == 200
+    assert res_api.json()["ok"] is True
+
+    estado_actual = dosificacion_manager.obtener_estado()
+    assert "Sin respuesta del relé" in (estado_actual.get("error_hardware") or "")
+
+    # Limpiar error de hardware para no afectar otras pruebas
+    with dosificacion_manager._lock:
+        dosificacion_manager.estado["error_hardware"] = None
+        dosificacion_manager.estado["modo"] = "listo"
+

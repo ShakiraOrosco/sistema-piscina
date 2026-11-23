@@ -57,20 +57,23 @@ export default function DosificacionMonitor({ onCambioEstado = null }) {
     }
   }
 
-  // Si no está activa y no hay un mensaje reciente de completado, no mostrar
-  if (!estado?.activa && estado?.modo !== 'completado' && estado?.modo !== 'detenido') {
+  // Si no está activa y no hay un mensaje reciente de completado o error, no mostrar
+  if (!estado?.activa && estado?.modo !== 'completado' && estado?.modo !== 'detenido' && estado?.modo !== 'error' && !estado?.error_hardware) {
     return null
   }
 
   const esActiva = estado?.activa
   const esCompletado = estado?.modo === 'completado'
   const esDetenido = estado?.modo === 'detenido'
+  const esError = estado?.modo === 'error' || Boolean(estado?.error_hardware)
 
   return (
     <div
       id="banner-dosificacion-en-vivo"
       className={`relative mb-6 overflow-hidden rounded-2xl border p-5 shadow-lg transition-all duration-500 animate-slide-down ${
-        esActiva
+        esError
+          ? 'border-red-400 bg-red-50/80 dark:border-red-600 dark:bg-red-950/20'
+          : esActiva
           ? 'border-violet-400 bg-gradient-to-br from-violet-600/10 via-sky-600/10 to-transparent ring-4 ring-violet-500/15 dark:border-violet-500/40 dark:bg-[#1f2937]'
           : esCompletado
           ? 'border-emerald-400 bg-emerald-50/80 dark:border-emerald-600 dark:bg-emerald-950/20'
@@ -130,6 +133,11 @@ export default function DosificacionMonitor({ onCambioEstado = null }) {
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {estado.mensaje}
             </p>
+            {estado.error_hardware && (
+              <p className="mt-1 text-xs font-semibold text-red-600 dark:text-red-400">
+                ⚠️ {estado.error_hardware} (Notificación enviada a Correo y WhatsApp)
+              </p>
+            )}
           </div>
         </div>
 

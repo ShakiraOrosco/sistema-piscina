@@ -31,6 +31,7 @@ except ImportError:
     SERIAL_DISPONIBLE = False
 
 from ..db import get_connection, get_dict_cursor
+from .notificacion_service import limpiar_cooldown_falla, notificar_falla_dispositivo
 from .piscina_service import obtener_o_crear_jornada_hoy
 
 
@@ -78,6 +79,7 @@ class DosificacionManager:
             "medio_control": "local",  # "wifi", "serial", "simulado"
             "inicio_timestamp": None,
             "fin_timestamp": None,
+            "error_hardware": None,
         }
 
     def detectar_puerto_serial(self) -> Optional[str]:
@@ -230,11 +232,13 @@ class DosificacionManager:
                 "modo": "dosificando",
                 "inicio_timestamp": datetime.now(timezone.utc).isoformat(),
                 "fin_timestamp": None,
+                "error_hardware": None,
             })
 
         # 1. Intentar por Serial USB directo primero si hay microcontrolador conectado (ej. COM5)
         comando_hardware_enviado = False
         medio_usado = "simulado"
+        errores_hw = []
         puerto_com = self.detectar_puerto_serial()
 
         if SERIAL_DISPONIBLE and puerto_com:
@@ -255,6 +259,7 @@ class DosificacionManager:
                         break
                 except Exception as e:
                     print(f"[Dosificador] Reintentando Serial ({puerto_com}) tras error: {e}")
+                    errores_hw.append(f"Puerto Serial {puerto_com}: {e}")
                     with self._ser_lock:
                         try:
                             if self._ser_conn:
@@ -281,11 +286,32 @@ class DosificacionManager:
                         comando_hardware_enviado = True
                         medio_usado = "wifi"
                         self.esp32_url = url_esp32
+                    else:
+                        errores_hw.append(f"ESP32 WiFi ({url_esp32}) respondió HTTP {resp.status_code}")
             except Exception as e:
                 print(f"[Dosificador] No se pudo conectar al ESP32 por WiFi: {e}")
+                errores_hw.append(f"ESP32 WiFi ({url_esp32}) sin respuesta: {e}")
+
+        error_hw_msg = None
+        if not comando_hardware_enviado and (puerto_com or url_esp32):
+            detalle_err = " | ".join(errores_hw) if errores_hw else "No hubo respuesta del microcontrolador ESP32."
+            error_hw_msg = (
+                f"Falla de comunicación con el hardware de dosificación (Bomba Pin 26 / Electroválvula Pin 25) "
+                f"al intentar aplicar {cantidad_g}g de {quimico}. {detalle_err}"
+            )
+            notificar_falla_dispositivo(
+                clave_falla="dosificacion_hardware_comunicacion",
+                titulo="Falla de comunicación con Bomba / Electroválvula de Dosificación",
+                modulo="Dosificación",
+                dispositivo=f"Controlador ESP32 ({puerto_com or url_esp32})",
+                detalle=error_hw_msg,
+            )
+        elif comando_hardware_enviado:
+            limpiar_cooldown_falla("dosificacion_hardware_comunicacion")
 
         with self._lock:
             self.estado["medio_control"] = medio_usado
+            self.estado["error_hardware"] = error_hw_msg
 
         # Iniciar ciclo de monitoreo / simulación en hilo background
         self._sim_thread = threading.Thread(
@@ -500,12 +526,21 @@ class DosificacionManager:
 
         except Exception as e:
             print(f"[Dosificador] Error en hilo de control: {e}")
+            msg_err = f"Error durante la ejecución de la dosificación de {quimico}: {e}"
             with self._lock:
                 self.estado["activa"] = False
                 self.estado["bomba_encendida"] = False
                 self.estado["valvula_abierta"] = False
                 self.estado["modo"] = "error"
                 self.estado["mensaje"] = f"Error en dosificación: {e}"
+                self.estado["error_hardware"] = msg_err
+            notificar_falla_dispositivo(
+                clave_falla="dosificacion_ejecucion_error",
+                titulo="Falla crítica durante la ejecución de dosificación",
+                modulo="Dosificación",
+                dispositivo="Bomba (Pin 26) / Electroválvula (Pin 25) / Caudalímetro (Pin 27)",
+                detalle=msg_err,
+            )
         finally:
             if client_wifi:
                 try:

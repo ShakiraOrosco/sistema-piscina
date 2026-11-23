@@ -7,6 +7,13 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException
 
 from ..db import get_connection, get_dict_cursor
+from ..services.dosificacion_service import dosificacion_manager
+from ..services.notificacion_service import (
+    actualizar_config_notificaciones,
+    limpiar_cooldown_falla,
+    notificar_falla_dispositivo,
+    obtener_config_notificaciones,
+)
 from ..services.piscina_service import (
     correr_prediccion,
     detalle_franjas,
@@ -60,7 +67,34 @@ def crear_lectura(payload: Dict[str, Any]):
         valores[campo] = v
 
     if len(sensores_fallidos) == len(rangos):
+        notificar_falla_dispositivo(
+            clave_falla="monitoreo_todos_sensores_fallidos",
+            titulo="Falla general en estación de sensores de monitoreo (pH, Turbidez, Temperatura)",
+            modulo="Monitoreo",
+            dispositivo="Nodo ESP32 de Sensores Físicos",
+            detalle=f"La estación de monitoreo envió una lectura sin ningún valor válido: {payload}",
+        )
         raise HTTPException(status_code=400, detail="La lectura no contiene ningún valor válido de sensor")
+
+    # Si algún sensor individual falló en esta lectura, enviar alerta por Correo y WhatsApp
+    nombres_legibles = {"ph": "pH", "turbidez": "Turbidez", "temperatura": "Temperatura"}
+    for campo_ok in rangos:
+        if campo_ok not in sensores_fallidos:
+            limpiar_cooldown_falla(f"sensor_{campo_ok}_sin_dato")
+            limpiar_cooldown_falla(f"sensor_{campo_ok}_fuera_rango")
+            limpiar_cooldown_falla(f"sensor_{campo_ok}_sin_conexion")
+    for campo_fallido in sensores_fallidos:
+        val_recibido = payload.get(campo_fallido)
+        motivo_str = "no envió dato (NULL)" if val_recibido is None else f"envió un valor fuera de rango ({val_recibido})"
+        tipo_clave = "sin_dato" if val_recibido is None else "fuera_rango"
+        nom_s = nombres_legibles.get(campo_fallido, campo_fallido)
+        notificar_falla_dispositivo(
+            clave_falla=f"sensor_{campo_fallido}_{tipo_clave}",
+            titulo=f"Falla en Sensor de {nom_s}",
+            modulo="Monitoreo",
+            dispositivo=f"Sensor de {nom_s} (ESP32)",
+            detalle=f"El sensor de {nom_s} {motivo_str}. El sistema está utilizando estimación inteligente para mantener el monitoreo continuo.",
+        )
 
     ph, turbidez, temperatura = valores["ph"], valores["turbidez"], valores["temperatura"]
 
@@ -700,13 +734,24 @@ def _construir_alertas_desde_datos(
             if e in MOTIVOS_FALLA:
                 est = estimados.get(var)
                 extra = f" — usando valor estimado {est['valor']:.2f}" if est else ""
+                msg_falla = f"Sensor de {nombre} {MOTIVOS_FALLA[e]}{extra}"
                 alertas_list.append({
                     "tipo": "warning",
-                    "msg": f"Sensor de {nombre} {MOTIVOS_FALLA[e]}{extra}",
+                    "msg": msg_falla,
                 })
+                notificar_falla_dispositivo(
+                    clave_falla=f"sensor_{var}_{e}",
+                    titulo=f"Falla en Sensor de {nombre} ({MOTIVOS_FALLA[e]})",
+                    modulo="Monitoreo",
+                    dispositivo=f"Sensor de {nombre} (ESP32)",
+                    detalle=msg_falla,
+                )
                 if est:
                     actuales[var] = est["valor"]
             else:
+                limpiar_cooldown_falla(f"sensor_{var}_sin_dato")
+                limpiar_cooldown_falla(f"sensor_{var}_fuera_rango")
+                limpiar_cooldown_falla(f"sensor_{var}_sin_conexion")
                 for m in reversed(mediciones):
                     if m.get(var) is not None:
                         actuales[var] = float(m[var])
@@ -776,9 +821,62 @@ def _construir_alertas_desde_datos(
                         "cantidad": dosis_recomendada_cobre
                     })
 
+    # Incluir alerta en el dashboard si hay falla activa en algún dispositivo de dosificación
+    estado_dosif = dosificacion_manager.obtener_estado()
+    if estado_dosif.get("error_hardware"):
+        alertas_list.insert(0, {
+            "tipo": "danger",
+            "msg": f"Falla en Dosificador: {estado_dosif['error_hardware']}",
+        })
+
     if not alertas_list:
         alertas_list.append({"tipo": "ok", "msg": "Todos los parámetros dentro del rango normal"})
     return alertas_list
+
+
+@router.get("/api/notificaciones/config")
+def ver_config_notificaciones():
+    """Devuelve el estado de configuración de notificaciones por Correo y WhatsApp y el historial reciente."""
+    return obtener_config_notificaciones()
+
+
+@router.put("/api/notificaciones/config")
+def guardar_config_notificaciones(payload: Dict[str, Any]):
+    """Actualiza el número de WhatsApp, API key de CallMeBot y/o correo adicional para alertas."""
+    if not payload:
+        raise HTTPException(status_code=400, detail="Se requiere cuerpo JSON")
+    cfg = actualizar_config_notificaciones(
+        whatsapp_phone=payload.get("whatsapp_phone"),
+        whatsapp_apikey=payload.get("whatsapp_apikey"),
+        email_extra=payload.get("email_extra"),
+    )
+    return {"mensaje": "Configuración de alertas actualizada correctamente", "config": cfg}
+
+
+@router.post("/api/notificaciones/probar")
+def probar_notificacion_alerta(payload: Optional[Dict[str, Any]] = None):
+    """Envía una alerta de prueba (o reporte manual de falla de dispositivo) al Correo y WhatsApp."""
+    datos = payload or {}
+    modulo = datos.get("modulo", "Monitoreo y Dosificación")
+    dispositivo = datos.get("dispositivo", "Sensor / Bomba Dosificadora ESP32")
+    titulo = datos.get("titulo", f"Prueba de Alerta de Falla en {dispositivo}")
+    detalle = datos.get(
+        "detalle",
+        "Verificación de envío automático de alertas por Correo Electrónico y WhatsApp ante falla de dispositivo.",
+    )
+    resultado = notificar_falla_dispositivo(
+        clave_falla=f"test_{int(time.time())}",
+        titulo=titulo,
+        modulo=modulo,
+        dispositivo=dispositivo,
+        detalle=detalle,
+        forzar=True,
+        en_background=False,
+    )
+    return {
+        "mensaje": "Notificación procesada",
+        "resultado": resultado,
+    }
 
 
 @router.get("/api/alertas")
