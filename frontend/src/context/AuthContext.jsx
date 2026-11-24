@@ -8,6 +8,7 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }) {
+  // Inicializa la sesión desde localStorage para persistir el login al recargar la página
   const [session, setSession] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('piscina_session'))

@@ -46,6 +46,7 @@ class LSTMRegressor(nn.Module):
             dropout=dropout if num_layers > 1 else 0.0,
             bidirectional=bidirectional
         )
+        # Capa de proyección densa: concatena ambas direcciones (hidden_dim * 2) si es BiLSTM
         fc_in = hidden_dim * 2 if bidirectional else hidden_dim
         self.fc1 = nn.Linear(fc_in, 32)
         self.relu = nn.ReLU()
@@ -53,6 +54,7 @@ class LSTMRegressor(nn.Module):
         self.fc2 = nn.Linear(32, output_dim)
 
     def forward(self, x):
+        # Extraer la representación del último paso temporal (16:00) tras procesar la secuencia completa
         out, (h_n, c_n) = self.lstm(x)
         last_out = out[:, -1, :]
         h1 = self.dropout(self.relu(self.fc1(last_out)))

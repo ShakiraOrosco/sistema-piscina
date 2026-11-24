@@ -25,7 +25,7 @@ echo Ejecutando inicio manual nativo en consolas separadas...
 echo.
 
 echo Iniciando Backend FastAPI...
-start "Backend FastAPI" cmd /k "cd backend && (if exist venv\Scripts\activate.bat call venv\Scripts\activate.bat) && cd .. && python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload"
+start "Backend FastAPI" cmd /k "cd backend && (if exist .venv\Scripts\activate.bat (call .venv\Scripts\activate.bat) else if exist venv\Scripts\activate.bat (call venv\Scripts\activate.bat)) && cd .. && python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload"
 
 timeout /t 3 /nobreak >nul
 

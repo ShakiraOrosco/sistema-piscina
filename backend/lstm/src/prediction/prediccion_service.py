@@ -31,6 +31,7 @@ _scaler_y_cache = None
 
 
 def _cargar_artefactos():
+    """Carga y mantiene en caché el modelo BiLSTM (.pth) y los escaladores MinMaxScaler (.joblib)."""
     global _modelo_cache, _scaler_x_cache, _scaler_y_cache
     if _modelo_cache is None:
         # Imports diferidos: así `seleccionar_franjas` se puede usar/probar sin torch.
@@ -270,13 +271,15 @@ def predecir_cierre_dia(
         for f in franjas
     ]
 
-    arr_seq = np.array([seq], dtype=float)  # (1, 3, 4)
+    # Redimensionar a tensor 3D (Batch=1, Seq_len=3, Features=7) y normalizar con el scaler_X de entrenamiento
+    arr_seq = np.array([seq], dtype=float)
     N, steps, feats = arr_seq.shape
     arr_flat = arr_seq.reshape(-1, feats)
 
     arr_flat_scaled = scaler_X.transform(arr_flat)
     arr_seq_scaled = arr_flat_scaled.reshape(N, steps, feats)
 
+    # Inferencia sin cálculo de gradientes y desnormalización de las 3 salidas
     with torch.no_grad():
         tensor_in = torch.tensor(arr_seq_scaled, dtype=torch.float32)
         pred_scaled = modelo(tensor_in).numpy()
@@ -302,6 +305,7 @@ def predecir_cierre_dia(
 
 
 def guardar_prediccion_db(id_jornada: int, resultado: Dict[str, Any], conn=None):
+    """Persiste el resultado de la predicción BiLSTM en la tabla `prediccion` asociada a la jornada actual."""
     if conn is None:
         return
 

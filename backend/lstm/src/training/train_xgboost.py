@@ -23,6 +23,7 @@ except ModuleNotFoundError:
     )
 
 def entrenar_modelo_xgboost():
+    """Entrena un modelo base XGBoost multisalida con características tabulares para comparar contra la red BiLSTM."""
     print("=== INICIANDO ENTRENAMIENTO XGBOOST ===")
     df = cargar_datos_csv()
     _, X_tab, y = construir_features_y_targets(df)

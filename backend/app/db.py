@@ -6,6 +6,7 @@ from psycopg2.extras import RealDictCursor
 
 from .config import settings
 
+# Pool LIFO en memoria para reutilizar conexiones activas y evitar latencia de handshake TCP/SSL
 _pool: queue.LifoQueue = queue.LifoQueue(maxsize=12)
 _puerto_preferido = None
 _lock = threading.Lock()
@@ -61,6 +62,7 @@ class _PooledConnection:
 
 
 def _crear_conexion_nueva():
+    """Abre una conexión nueva a PostgreSQL probando el puerto configurado y el alternativo (5432/6543)."""
     global _puerto_preferido
     puerto_cfg = int(settings.DB_PORT) if str(settings.DB_PORT).isdigit() else 5432
     otro_puerto = 5432 if puerto_cfg != 5432 else 6543
@@ -100,6 +102,7 @@ def _crear_conexion_nueva():
 
 
 def get_connection():
+    """Obtiene una conexión activa del pool o crea una nueva si el pool está vacío."""
     while not _pool.empty():
         try:
             raw_conn, last_used = _pool.get_nowait()

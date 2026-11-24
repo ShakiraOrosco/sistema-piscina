@@ -25,7 +25,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copiar el código del backend y módulos de IA/LSTM
 COPY backend /app/backend
-COPY lstm /app/lstm
 
 # Establecer directorio de trabajo en /app/backend para que uvicorn ejecute app.main:app
 WORKDIR /app/backend

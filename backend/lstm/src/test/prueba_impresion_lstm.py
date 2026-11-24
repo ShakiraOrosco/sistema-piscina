@@ -36,6 +36,7 @@ def imprimir_separador(titulo: str) -> None:
 
 
 def prueba_1_modelo_y_arquitectura() -> tuple:
+    """Verifica la carga de pesos (.pth), escaladores (.joblib) y muestra la arquitectura BiLSTM."""
     imprimir_separador("1. CARGA DE ARTEFACTOS Y ARQUITECTURA DEL MODELO LSTM")
 
     lstm_path = os.path.join(MODELS_DIR, "lstm_piscina_model.pth")
@@ -63,6 +64,7 @@ def prueba_1_modelo_y_arquitectura() -> tuple:
 
 
 def prueba_2_real_vs_predicho(modelo, scaler_x, scaler_y, n_muestras: int = 5) -> None:
+    """Compara las dosis reales vs. predichas por el modelo sobre muestras del conjunto de prueba (Test)."""
     imprimir_separador("2. PRUEBA EN CONJUNTO DE TEST: DATOS DE ENTRADA + REAL VS. PREDICHO")
 
     df = cargar_datos_csv()
@@ -116,6 +118,7 @@ def prueba_2_real_vs_predicho(modelo, scaler_x, scaler_y, n_muestras: int = 5) -
 
 
 def prueba_3_escenarios_inferencia() -> None:
+    """Simula escenarios operativos completos y parciales llamando al servicio `predecir_cierre_dia`."""
     imprimir_separador("3. PRUEBA DE INFERENCIA END-TO-END (predecir_cierre_dia)")
 
     escenarios = [

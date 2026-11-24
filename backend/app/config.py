@@ -3,10 +3,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+# Cargar variables de entorno desde la raíz del proyecto (.env)
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
 class Settings:
+    """Configuración centralizada del servidor (Base de datos, JWT y correo SMTP)."""
     DB_HOST = os.getenv("SUPABASE_DB_HOST", "localhost")
     DB_PORT = os.getenv("SUPABASE_DB_PORT", "5432")
     DB_NAME = os.getenv("SUPABASE_DB_NAME", "postgres")

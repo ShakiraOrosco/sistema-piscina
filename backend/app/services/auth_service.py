@@ -11,19 +11,27 @@ import jwt
 from ..config import settings
 
 
+# ─── Utilidades de Criptografía y Contraseñas ─────────────────────────────────
+
 def generar_password_temporal() -> str:
+    """Genera una contraseña aleatoria segura para nuevos usuarios o recuperaciones."""
     return secrets.token_urlsafe(12)
 
 
 def hash_password(password: str) -> str:
+    """Genera el hash bcrypt de una contraseña en texto plano."""
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verificar_password(password: str, password_hash: str) -> bool:
+    """Compara una contraseña en texto plano contra su hash bcrypt almacenado."""
     return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
 
 
+# ─── Generación de Tokens JWT ─────────────────────────────────────────────────
+
 def crear_token(id_usuario: int, correo: str, sigla_rol: str, debe_cambiar: bool) -> str:
+    """Crea el JWT de sesión principal con los datos y rol del usuario."""
     ahora = datetime.now(timezone.utc)
     payload = {
         "sub": str(id_usuario),
@@ -37,6 +45,7 @@ def crear_token(id_usuario: int, correo: str, sigla_rol: str, debe_cambiar: bool
 
 
 def crear_token_2fa(id_usuario: int) -> str:
+    """Crea un JWT temporal (10 min) exclusivo para completar el desafío de doble factor (2FA)."""
     ahora = datetime.now(timezone.utc)
     payload = {
         "sub": str(id_usuario),
@@ -48,10 +57,14 @@ def crear_token_2fa(id_usuario: int) -> str:
 
 
 def generar_codigo_2fa() -> str:
+    """Genera un código numérico aleatorio de 6 dígitos para verificación 2FA."""
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
+# ─── Envío de Correos SMTP ────────────────────────────────────────────────────
+
 def enviar_codigo_2fa(destinatario: str, codigo: str) -> None:
+    """Envía por correo electrónico el código de verificación 2FA (o lo muestra en consola si no hay SMTP)."""
     if not settings.SMTP_HOST or not settings.SMTP_FROM:
         print(f"\n=======================================================")
         print(f"🔐 [2FA] Servidor SMTP no configurado en .env")

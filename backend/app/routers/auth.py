@@ -27,6 +27,7 @@ from ..services.auth_service import (
 router = APIRouter(prefix="/api/v1/auth", tags=["autenticacion"])
 bearer = HTTPBearer()
 
+# Control en memoria de intentos fallidos de login (bloqueo temporal por fuerza bruta)
 MAX_INTENTOS_FALLIDOS = 3
 DURACION_BLOQUEO_MINUTOS = 5
 _intentos_login_lock = threading.Lock()
@@ -130,6 +131,7 @@ class EditarUsuario(BaseModel):
 def usuario_actual(
     credenciales: Annotated[HTTPAuthorizationCredentials, Depends(bearer)],
 ) -> dict:
+    """Dependencia FastAPI que valida el token Bearer JWT y extrae los claims del usuario."""
     try:
         return jwt.decode(
             credenciales.credentials,
@@ -141,6 +143,7 @@ def usuario_actual(
 
 
 def administrador_actual(claims: Annotated[dict, Depends(usuario_actual)]) -> dict:
+    """Dependencia FastAPI que restringe el acceso únicamente a usuarios con rol Administrador (ADM)."""
     if claims.get("sigla_rol") != "ADM":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Se requiere rol administrador")
     return claims

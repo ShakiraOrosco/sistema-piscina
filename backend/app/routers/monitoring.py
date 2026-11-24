@@ -463,6 +463,7 @@ def registrar_dosificacion_parcial(payload: Dict[str, Any]):
 
 @router.get("/api/estado_actual")
 def estado_actual():
+    """Consolida el estado completo de la jornada actual para el Dashboard (sensores, aforos, pronóstico y predicción BiLSTM)."""
     conn = get_connection()
     if conn is None:
         raise HTTPException(status_code=500, detail="No se pudo conectar a Supabase")

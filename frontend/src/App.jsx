@@ -15,6 +15,7 @@ import ReportesPage from './pages/Reportes'
 import NotFound from './pages/NotFound'
 import './App.css'
 
+// Redirección inicial según el rol del usuario autenticado (Cajero -> /caja, resto -> /dashboard)
 function IndexRedirect() {
   const { session } = useAuth()
   if (session?.usuario?.sigla_rol === 'CAJ') {
@@ -23,6 +24,7 @@ function IndexRedirect() {
   return <Navigate to="/dashboard" replace />
 }
 
+// Guardas de ruta por rol (ADM: acceso total, OPE: operativo/monitoreo, CAJ: exclusivo taquilla)
 function ProtectedDashboard() {
   const { session } = useAuth()
   if (session?.usuario?.sigla_rol === 'CAJ') {

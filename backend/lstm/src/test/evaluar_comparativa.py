@@ -35,12 +35,14 @@ REPORTS_DIR = os.path.join(BASE_DIR, "reports")
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
 def calcular_metricas(y_true, y_pred):
+    """Calcula RMSE, MAE y coeficiente de determinación R² entre valores reales y predichos."""
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     mae = mean_absolute_error(y_true, y_pred)
     r2 = r2_score(y_true, y_pred)
     return rmse, mae, r2
 
 def evaluar_y_comparar():
+    """Evalúa y compara el rendimiento y generalización (Train vs Test) entre BiLSTM y XGBoost."""
     print("=== INICIANDO EVALUACIÓN Y COMPARATIVA DE MODELOS ===")
     df = cargar_datos_csv()
     X_seq, X_tab, y = construir_features_y_targets(df)

@@ -7,10 +7,12 @@ from typing import Any, Dict, Optional, Tuple
 
 from ..db import get_dict_cursor
 
+# Caché ligera de la jornada actual para evitar consultas repetidas en el mismo día
 _jornada_hoy_cache = {"fecha": None, "id_jornada": None}
 
 
 def serializable(obj):
+    """Convierte tipos de base de datos (datetime, date, Decimal) a valores serializables en JSON."""
     if obj is None:
         return None
     if hasattr(obj, "isoformat"):
@@ -21,6 +23,7 @@ def serializable(obj):
 
 
 def serializar_dict(d):
+    """Serializa todas las claves de un diccionario proveniente de un cursor SQL."""
     if d is None:
         return None
     return {k: (serializable(v) if v is not None else None) for k, v in d.items()}

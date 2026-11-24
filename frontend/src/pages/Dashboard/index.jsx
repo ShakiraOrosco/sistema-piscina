@@ -27,6 +27,7 @@ export default function Dashboard() {
   const [showReportModal, setShowReportModal] = useState(false)
   const isFetchingRef = useRef(false)
 
+  // Consulta periódica del estado general de la jornada y las alertas activas
   const loadSensorData = async (force = false) => {
     if (isFetchingRef.current && !force) return
     isFetchingRef.current = true
@@ -51,6 +52,7 @@ export default function Dashboard() {
     }
   }
 
+  // Polling automático cada 12 segundos mientras la pestaña del navegador esté activa
   useEffect(() => {
     loadSensorData(true)
     const intervalId = window.setInterval(() => {
@@ -61,6 +63,7 @@ export default function Dashboard() {
     return () => window.clearInterval(intervalId)
   }, [])
 
+  // Dispara manualmente el recálculo de la predicción BiLSTM con los datos actuales
   const predecirAhora = async () => {
     try {
       await monitoringApi.post('/api/predecir')
